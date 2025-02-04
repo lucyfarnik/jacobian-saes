@@ -49,7 +49,7 @@ class CacheConfig(Serializable):
     dataset_split: str = "train"
     dataset_name: str = ""
     dataset_row: str = "text"
-    batch_size: int = 1
+    batch_size: int = 8
     ctx_len: int = 64
     n_tokens: int = 10_000
     n_splits: int = 5
