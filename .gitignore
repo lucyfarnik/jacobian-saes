@@ -159,7 +159,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-
 wandb/
 checkpoints/
 **/.DS_Store
@@ -170,3 +169,11 @@ scratchpad.ipynb
 scratch/*
 latents/*
 results/*
+
+# Slurm
+slurm-*.out
+*.o
+
+*.csv
+*.safetensors
+eval_results/
