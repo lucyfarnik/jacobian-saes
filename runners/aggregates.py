@@ -49,8 +49,8 @@ class CacheConfig(Serializable):
     dataset_split: str = "train"
     dataset_name: str = ""
     dataset_row: str = "text"
-    batch_size: int = 32
-    ctx_len: int = 256
+    batch_size: int = 1
+    ctx_len: int = 64
     n_tokens: int = 10_000
     n_splits: int = 5
 
@@ -483,7 +483,7 @@ def main(checkpoint_dirpath: str) -> None:
     model, dataloader = get_dataloader(examples_config)
 
     # aggregates = get_example_aggregates(checkpoint_dirpath, model)
-    aggregates: list[Stat] = [Pair(), Covariance()]
+    aggregates: list[Stat] = [Pair()]
 
     sae_pair, mlp_with_act_grads = load_checkpoint(checkpoint_dirpath, examples_config)
 
