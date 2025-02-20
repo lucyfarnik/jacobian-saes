@@ -177,3 +177,6 @@ slurm-*.out
 *.csv
 *.safetensors
 eval_results/
+
+feature_pairs/**/*.tex
+feature_pairs_tex/**/*.tex

@@ -21,16 +21,18 @@ from simple_parsing import Serializable
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformer_lens import HookedTransformer  # type: ignore
-from transformer_lens import utils
+from transformer_lens import (
+    HookedTransformer,  # type: ignore
+    utils,
+)
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-from jacobian_saes.sae_pair import SAEPair
-from jacobian_saes.training.mlp_with_act_grads import MLPWithActGrads
-from jacobian_saes.utils import default_device
+from jacobian_saes.sae_pair import SAEPair  # noqa: E402
+from jacobian_saes.training.mlp_with_act_grads import MLPWithActGrads  # noqa: E402
+from jacobian_saes.utils import default_device  # noqa: E402
 
 # dimensions:
 #
@@ -49,9 +51,8 @@ class CacheConfig(Serializable):
     dataset_split: str = "train"
     dataset_name: str = ""
     dataset_row: str = "text"
-    batch_size: int = 8
-    ctx_len: int = 64
-    n_tokens: int = 10_000
+    batch_size: int = 32
+    ctx_len: int = 16
     n_splits: int = 5
 
 
@@ -75,7 +76,6 @@ class ExamplesConfig:
         out += "," + self.cache.dataset_split.replace("[:", "_").replace("]", "")
         out += ",batch_size=" + str(self.cache.batch_size)
         out += ",ctx_len=" + str(self.cache.ctx_len)
-        out += ",tokens=" + str(self.cache.n_tokens)
         return out
 
 
@@ -324,18 +324,22 @@ class Examples(Stat):
             ].item()
         for row in rows.values():
             self.data.append(row)
+            # print(row)
 
     def save(self, examples_config: ExamplesConfig, checkpoint_dirpath: str):
+        os.makedirs(checkpoint_dirpath, exist_ok=True)
         for k in ["jacobian", "sae_acts_in", "sae_acts_out"]:
             for row in self.data:
                 row[f"{k}_max"] = max(row[k])
                 row[f"{k}_norm"] = json.dumps([x / self[f"{k}_max"] for x in row[k]])
                 row[k] = json.dumps(row[k])
 
-        filename = (
-            f"ex-{self.sae_index_in}v{self.sae_index_out}-_{str(examples_config)}.csv"
-        )
+        filename = f"examples-{self.sae_index_in}-v-{self.sae_index_out}_{str(examples_config)}.csv"
         dataframe = pd.DataFrame(self.data)
+        print(dataframe.head())
+        if len(dataframe) == 0:
+            print(f"No examples for {filename}")
+            return dataframe
         dataframe = dataframe.sort_values("jacobian_max", ascending=False)
         dataframe.to_csv(os.path.join(checkpoint_dirpath, filename), index=False)
         return dataframe
@@ -448,21 +452,10 @@ class Covariance(Stat):
 
 
 def get_example_aggregates(
-    checkpoint_dirpath: str, model: LanguageModel | Envoy
+    filename: str, model: LanguageModel | Envoy
 ) -> list[Examples]:
-    pair_filename = next(
-        (
-            filename
-            for filename in os.listdir(checkpoint_dirpath)
-            if filename.startswith("pair_")
-        )
-    )
     sae_indices = [
-        (int(i), int(j))
-        for i, j in pd.read_csv(os.path.join(checkpoint_dirpath, pair_filename))
-        .sort_values("count", ascending=False)
-        .head(100)[["i", "j"]]
-        .values
+        (int(i), int(j)) for i, j in pd.read_csv(filename)[["i", "j"]].values
     ]
     return [
         Examples(model.tokenizer, sae_index_in, sae_index_out)  # type: ignore
@@ -470,11 +463,29 @@ def get_example_aggregates(
     ]
 
 
-def main(checkpoint_dirpath: str) -> None:
+def save_pair_stats(filename: str) -> None:
+    df = pd.read_csv(filename)
+    df.describe().transpose().to_csv(filename.replace(".csv", "_describe.csv"))
+    df.head().to_csv(filename.replace(".csv", "_count.csv"), index=False)
+    df.sort_values("mean", ascending=False).head().to_csv(
+        filename.replace(".csv", "_mean.csv"), index=False
+    )
+    df.sort_values("std", ascending=False).head().to_csv(
+        filename.replace(".csv", "_std.csv"), index=False
+    )
+    df.sort_values("abs_mean", ascending=False).head().to_csv(
+        filename.replace(".csv", "_abs_mean.csv"), index=False
+    )
+    df.sort_values("abs_std", ascending=False).head().to_csv(
+        filename.replace(".csv", "_abs_std.csv"), index=False
+    )
+
+
+def main(checkpoint_dirpath: str, examples_filename: str) -> None:
     with open(os.path.join(checkpoint_dirpath, "cfg.json"), "r") as f:
         cfg = json.load(f)
     model_name = cfg["model_name"]
-    run_name = cfg["run_name"]
+    # run_name = cfg["run_name"]
 
     examples_config = ExamplesConfig(
         model_name=f"EleutherAI/{model_name}", cache=CacheConfig()
@@ -482,8 +493,8 @@ def main(checkpoint_dirpath: str) -> None:
 
     model, dataloader = get_dataloader(examples_config)
 
-    # aggregates = get_example_aggregates(checkpoint_dirpath, model)
-    aggregates: list[Stat] = [Pair()]
+    # aggregates: list[Stat] = [Pair()]
+    aggregates = get_example_aggregates(examples_filename, model)
 
     sae_pair, mlp_with_act_grads = load_checkpoint(checkpoint_dirpath, examples_config)
 
@@ -540,12 +551,33 @@ def main(checkpoint_dirpath: str) -> None:
             aggregate.add(batch_index, activations)
 
     for i, aggregate in enumerate(aggregates):
-        dataframe = aggregate.save(examples_config, checkpoint_dirpath)  # type: ignore
-        dataframe.to_csv(f"stats{i}_{run_name}.csv", index=False)
+        examples_dirpath = os.path.join(
+            "feature_pairs",
+            examples_filename.replace("stats0_", "").replace(".csv", ""),
+        )
+        _dataframe = aggregate.save(examples_config, examples_dirpath)
+        # _dataframe.to_csv(f"stats{i}_{run_name}.csv", index=False)
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--path", "-p", type=str)
+    parser.add_argument("--stat", "-s", type=str)
     args = parser.parse_args()
-    main(args.path)
+    stat = args.stat
+
+    save_pair_stats("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv")
+    save_pair_stats("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv")
+    save_pair_stats("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv")
+
+    # main(
+    #     "checkpoints/yih5o5jd/final_300003328",
+    #     f"stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_{stat}.csv",
+    # )
+    # main(
+    #     "checkpoints/4yzpocwn/final_300003328",
+    #     f"stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
+    # )
+    # main(
+    #     "checkpoints/1flyawyo/final_300003328",
+    #     f"stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
+    # )
