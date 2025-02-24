@@ -54,6 +54,12 @@ def generate_examples_tex(filepath: str, max_rows: int | None = None) -> str:
     df = pd.read_csv(filepath)
     df = df.sort_values("jacobian_max", ascending=False)
 
+    MAX_VALS = {
+        "jacobian": float(df["jacobian_max"].max()),
+        "sae_acts_in": float(df["sae_acts_in_max"].max()),
+        "sae_acts_out": float(df["sae_acts_out_max"].max()),
+    }
+
     if max_rows is not None:
         df = df.head(max_rows)
 
@@ -65,7 +71,8 @@ def generate_examples_tex(filepath: str, max_rows: int | None = None) -> str:
     ]:
         df[col] = df[col].apply(ast.literal_eval)
 
-    def get_color(value: float, max_val: float, type_name: str) -> str:
+    def get_color(value: float, type_name: str) -> str:
+        max_val = MAX_VALS[type_name]
         if type_name == "jacobian":
             abs_max = max(abs(max_val), abs(value))
             normalized = abs(float(value)) / abs_max if abs_max != 0 else 0
@@ -103,7 +110,7 @@ def generate_examples_tex(filepath: str, max_rows: int | None = None) -> str:
         "\\centering",
         "\\begin{longtable}{lrl}",
         "\\toprule",
-        "Category & Max. value & Example tokens \\\\",
+        "Category & Max. abs. value & Example tokens \\\\",
         "\\midrule",
     ]
 
@@ -127,7 +134,7 @@ def generate_examples_tex(filepath: str, max_rows: int | None = None) -> str:
 
                 clean_token = clean_token_for_latex(token)
                 if clean_token.strip():
-                    color = get_color(float(val), max_value, value_col)
+                    color = get_color(float(val), value_col)
                     colored_tokens.append(
                         f"\\colorbox{{{color}}}{{\\strut {clean_token}}}"
                     )
@@ -135,7 +142,7 @@ def generate_examples_tex(filepath: str, max_rows: int | None = None) -> str:
             tokens_str = " ".join(colored_tokens)
 
             latex_output.append(
-                f"{CATEGORIES[value_col]} & {max_value:.3e} & {tokens_str} \\\\"
+                f"{CATEGORIES[value_col]} & \\num{{{max_value:.3e}}} & {tokens_str} \\\\"
             )
 
             if value_col == "sae_acts_out":
@@ -187,6 +194,7 @@ if __name__ == "__main__":
     for filename in find_examples():
         latex_table = generate_examples_tex(filename, max_rows)
         print(filename)
-        for file in [filename.replace("csv", "tex"), prettify(filename)]:
-            with open(file, "w", encoding="utf-8") as f:
-                f.write(latex_table)
+        if "ctx_len=16" in filename:
+            for file in [filename.replace("csv", "tex"), prettify(filename)]:
+                with open(file, "w", encoding="utf-8") as f:
+                    f.write(latex_table)

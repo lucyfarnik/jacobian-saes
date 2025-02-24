@@ -53,7 +53,7 @@ class CacheConfig(Serializable):
     dataset_row: str = "text"
     batch_size: int = 32
     ctx_len: int = 16
-    n_splits: int = 5
+    n_splits: int = 1
 
 
 @dataclass
@@ -463,20 +463,20 @@ def get_example_aggregates(
     ]
 
 
-def save_pair_stats(filename: str) -> None:
+def save_pair_stats(filename: str, max_rows: int = 5) -> None:
     df = pd.read_csv(filename)
     df.describe().transpose().to_csv(filename.replace(".csv", "_describe.csv"))
-    df.head().to_csv(filename.replace(".csv", "_count.csv"), index=False)
-    df.sort_values("mean", ascending=False).head().to_csv(
+    df.head(max_rows).to_csv(filename.replace(".csv", "_count.csv"), index=False)
+    df.sort_values("mean", ascending=False).head(max_rows).to_csv(
         filename.replace(".csv", "_mean.csv"), index=False
     )
-    df.sort_values("std", ascending=False).head().to_csv(
+    df.sort_values("std", ascending=False).head(max_rows).to_csv(
         filename.replace(".csv", "_std.csv"), index=False
     )
-    df.sort_values("abs_mean", ascending=False).head().to_csv(
+    df.sort_values("abs_mean", ascending=False).head(max_rows).to_csv(
         filename.replace(".csv", "_abs_mean.csv"), index=False
     )
-    df.sort_values("abs_std", ascending=False).head().to_csv(
+    df.sort_values("abs_std", ascending=False).head(max_rows).to_csv(
         filename.replace(".csv", "_abs_std.csv"), index=False
     )
 
@@ -565,19 +565,20 @@ if __name__ == "__main__":
     args = parser.parse_args()
     stat = args.stat
 
-    save_pair_stats("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv")
-    save_pair_stats("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv")
-    save_pair_stats("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv")
+    max_rows = 32
+    save_pair_stats("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv", max_rows)
+    save_pair_stats("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv", max_rows)
+    save_pair_stats("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv", max_rows)
 
-    # main(
-    #     "checkpoints/yih5o5jd/final_300003328",
-    #     f"stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_{stat}.csv",
-    # )
-    # main(
-    #     "checkpoints/4yzpocwn/final_300003328",
-    #     f"stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
-    # )
-    # main(
-    #     "checkpoints/1flyawyo/final_300003328",
-    #     f"stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
-    # )
+    main(
+        "checkpoints/yih5o5jd/final_300003328",
+        f"stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_{stat}.csv",
+    )
+    main(
+        "checkpoints/4yzpocwn/final_300003328",
+        f"stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
+    )
+    main(
+        "checkpoints/1flyawyo/final_300003328",
+        f"stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
+    )
