@@ -2,9 +2,10 @@
 
 import torch
 from einops import rearrange
-from jaxtyping import Array, Float
+from jaxtyping import Float
+from torch import Tensor
 
-type Jacobian = Float[Array, "batch seq_pos k2 k1"]
+type Jacobian = Float[Tensor, "batch seq_pos k2 k1"]
 
 
 def l1(x: Jacobian):
