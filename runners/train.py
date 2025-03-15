@@ -12,6 +12,8 @@ from jacobian_saes import LanguageModelSAERunnerConfig, SAETrainingRunner
 from jacobian_saes.training.sparsity_metrics import sparsity_metrics
 
 d_model_by_size = {
+    "14m": 128,
+    "31m": 256,
     "70m": 512,
     "160m": 768,
     "gpt2-small": 768,
@@ -24,6 +26,8 @@ d_model_by_size = {
 }
 
 n_layers_by_size = {
+    "14m": 6,
+    "31m": 6,
     "70m": 6,
     "160m": 12,
     "gpt2-small": 12,
@@ -125,7 +129,17 @@ parser.add_argument(
     default="jacobian_saes_test",
     help="Wandb project name",
 )
+parser.add_argument(
+    "--model-deduped",
+    action=argparse.BooleanOptionalAction,
+    default=None,
+    help="Whether to use the deduped version of the model (default: True if a deduped version of this model is known to exist).",
+)
+
 args = parser.parse_args()
+
+if args.model_deduped is None:
+    args.model_deduped = args.model_size not in ["14m", "31m", "gpt2-small"]
 
 if torch.cuda.is_available():
     device = "cuda"
@@ -194,10 +208,11 @@ if args.model_preset is not None:
     else:
         raise ValueError(f"Model preset not yet supported: {args.model_preset}")
 
+model_name_suffix = "-deduped" if args.model_deduped else ""
 model_name = (
     "gpt2-small"
     if args.model_size == "gpt2-small"
-    else f"pythia-{args.model_size}-deduped"
+    else f"pythia-{args.model_size}{model_name_suffix}"
 )
 
 dataset_path = "apollo-research/monology-pile-uncopyrighted-tokenizer-" + (
