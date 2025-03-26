@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from itertools import product
 from pprint import pprint
-from typing import Callable, Iterable, NamedTuple, Sequence
+from typing import Callable, Iterable, Literal, NamedTuple, Sequence
 
 import baukit  # type: ignore
 import einops
@@ -21,10 +21,8 @@ from simple_parsing import Serializable
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformer_lens import (
-    HookedTransformer,  # type: ignore
-    utils,
-)
+from transformer_lens import HookedTransformer  # type: ignore
+from transformer_lens import utils
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -263,7 +261,90 @@ class Stat(ABC):
         raise NotImplementedError
 
 
-class Examples(Stat):
+class LatentExamples(Stat):
+    def __init__(
+        self,
+        tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
+        sae_in: bool,
+        sae_index: int,
+    ) -> None:
+        self.tokenizer = tokenizer
+        self.sae_in = sae_in
+        self.sae_index = sae_index
+
+        self.sae_acts_max = 0.0
+
+        self.data = []
+
+    def __getitem__(self, key: str) -> float:
+        return getattr(self, key)
+
+    def add(self, step: int, acts: Activations) -> None:
+        tokens_BT = [
+            self.tokenizer.convert_ids_to_tokens(batch.tolist())
+            for batch in acts.input_ids_BT
+        ]
+
+        sae_acts_BTL = acts.sae_acts_in_BTL if self.sae_in else acts.sae_acts_out_BTL
+        sae_acts_BT = sae_acts_BTL[:, :, self.sae_index]
+
+        self.sae_acts_max = max(self.sae_acts_max, sae_acts_BT.max().item())
+
+        sae_indices_BTK = (
+            acts.sae_indices_in_BTK if self.sae_in else acts.sae_indices_out_BTK
+        )
+        mask_BTK = sae_indices_BTK == self.sae_index
+
+        rows = {}
+        for batch_index, token_index, topk_index in mask_BTK.nonzero():
+            batch_index_ = batch_index.item()
+            token_index_ = token_index.item()
+
+            if batch_index_ not in rows:
+                rows[batch_index_] = {
+                    "step": step,
+                    "batch_index": batch_index_,
+                    "tokens": tokens_BT[batch_index],
+                    "sae_acts": sae_acts_BT[batch_index].tolist(),
+                }
+        for row in rows.values():
+            self.data.append(row)
+            # print(row)
+
+    def save(self, examples_config: ExamplesConfig, checkpoint_dirpath: str):
+        os.makedirs(checkpoint_dirpath, exist_ok=True)
+        for k in ["sae_acts"]:
+            for row in self.data:
+                row[f"{k}_max"] = max(row[k])
+                row[f"{k}_norm"] = json.dumps([x / self[f"{k}_max"] for x in row[k]])
+                row[k] = json.dumps(row[k])
+
+        sae_in_out = "in" if self.sae_in else "out"
+        filename = f"examples-{sae_in_out}-{self.sae_index}_{str(examples_config)}.csv"
+        dataframe = pd.DataFrame(self.data)
+        print(dataframe.head())
+        if len(dataframe) == 0:
+            print(f"No examples for {filename}")
+            return dataframe
+        dataframe = dataframe.sort_values("sae_acts_max", ascending=False)
+        dataframe.to_csv(os.path.join(checkpoint_dirpath, filename), index=False)
+        return dataframe
+
+
+def get_latent_examples(
+    filename: str, model: LanguageModel | Envoy
+) -> list[LatentExamples]:
+    sae_indices = [
+        (int(i), int(j)) for i, j in pd.read_csv(filename)[["i", "j"]].values
+    ]
+    latent_examples = []
+    for sae_index_in, sae_index_out in sae_indices:
+        latent_examples.append(LatentExamples(model.tokenizer, True, sae_index_in))  # type: ignore
+        latent_examples.append(LatentExamples(model.tokenizer, False, sae_index_out))  # type: ignore
+    return latent_examples
+
+
+class PairExamples(Stat):
     def __init__(
         self,
         tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
@@ -343,6 +424,18 @@ class Examples(Stat):
         dataframe = dataframe.sort_values("jacobian_max", ascending=False)
         dataframe.to_csv(os.path.join(checkpoint_dirpath, filename), index=False)
         return dataframe
+
+
+def get_pair_examples(
+    filename: str, model: LanguageModel | Envoy
+) -> list[PairExamples]:
+    sae_indices = [
+        (int(i), int(j)) for i, j in pd.read_csv(filename)[["i", "j"]].values
+    ]
+    return [
+        PairExamples(model.tokenizer, sae_index_in, sae_index_out)  # type: ignore
+        for sae_index_in, sae_index_out in sae_indices
+    ]
 
 
 class Pair(Stat):
@@ -451,18 +544,6 @@ class Covariance(Stat):
         return dataframe2
 
 
-def get_example_aggregates(
-    filename: str, model: LanguageModel | Envoy
-) -> list[Examples]:
-    sae_indices = [
-        (int(i), int(j)) for i, j in pd.read_csv(filename)[["i", "j"]].values
-    ]
-    return [
-        Examples(model.tokenizer, sae_index_in, sae_index_out)  # type: ignore
-        for sae_index_in, sae_index_out in sae_indices
-    ]
-
-
 def save_pair_stats(filename: str, max_rows: int = 5) -> None:
     df = pd.read_csv(filename)
     df.describe().transpose().to_csv(filename.replace(".csv", "_describe.csv"))
@@ -481,7 +562,11 @@ def save_pair_stats(filename: str, max_rows: int = 5) -> None:
     )
 
 
-def main(checkpoint_dirpath: str, examples_filename: str) -> None:
+def main(
+    checkpoint_dirpath: str,
+    examples_filename: str,
+    mode: Literal["pair", "latent"],
+) -> None:
     with open(os.path.join(checkpoint_dirpath, "cfg.json"), "r") as f:
         cfg = json.load(f)
     model_name = cfg["model_name"]
@@ -494,7 +579,10 @@ def main(checkpoint_dirpath: str, examples_filename: str) -> None:
     model, dataloader = get_dataloader(examples_config)
 
     # aggregates: list[Stat] = [Pair()]
-    aggregates = get_example_aggregates(examples_filename, model)
+    if mode == "pair":
+        aggregates = get_pair_examples(examples_filename, model)
+    else:
+        aggregates = get_latent_examples(examples_filename, model)
 
     sae_pair, mlp_with_act_grads = load_checkpoint(checkpoint_dirpath, examples_config)
 
@@ -551,8 +639,10 @@ def main(checkpoint_dirpath: str, examples_filename: str) -> None:
             aggregate.add(batch_index, activations)
 
     for i, aggregate in enumerate(aggregates):
+        dir = "feature_pairs" if mode == "pair" else "features"
+        os.makedirs(dir, exist_ok=True)
         examples_dirpath = os.path.join(
-            "feature_pairs",
+            dir,
             examples_filename.replace("stats0_", "").replace(".csv", ""),
         )
         _dataframe = aggregate.save(examples_config, examples_dirpath)
@@ -561,24 +651,32 @@ def main(checkpoint_dirpath: str, examples_filename: str) -> None:
 
 if __name__ == "__main__":
     parser = ArgumentParser()
+    parser.add_argument("--mode", "-m", type=str)
     parser.add_argument("--stat", "-s", type=str)
     args = parser.parse_args()
+    mode = args.mode
     stat = args.stat
 
+    assert mode in ["pair", "latent"], f"Unknown mode: {mode}"
+    mode: Literal["pair", "latent"]
+
     max_rows = 32
-    save_pair_stats("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv", max_rows)
-    save_pair_stats("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv", max_rows)
-    save_pair_stats("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv", max_rows)
+    # save_pair_stats("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv", max_rows)
+    # save_pair_stats("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv", max_rows)
+    # save_pair_stats("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv", max_rows)
 
     main(
         "checkpoints/yih5o5jd/final_300003328",
         f"stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_{stat}.csv",
+        mode,
     )
     main(
         "checkpoints/4yzpocwn/final_300003328",
         f"stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
+        mode,
     )
     main(
         "checkpoints/1flyawyo/final_300003328",
         f"stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
+        mode,
     )
