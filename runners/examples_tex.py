@@ -1,5 +1,6 @@
 import ast
 import os
+import re
 import unicodedata
 
 import pandas as pd
@@ -165,6 +166,17 @@ def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> st
 def generate_latent_examples_tex(
     filepath: str, sae_in: bool, max_rows: int | None = None
 ) -> str:
+    parsed = parse_latent(prettify_latent(filepath))
+    if parsed is None:
+        caption = filepath.replace("_", " ")
+    else:
+        model = parsed["model"]
+        layer = parsed["layer"]
+        stat = parsed["stat"]
+        sae = parsed["sae"]
+        index = parsed["index"]
+        caption = f"{model} layer {layer} {stat} {sae} {index}"
+
     df = pd.read_csv(filepath)
     df = df.sort_values("sae_acts_max", ascending=False)
 
@@ -223,7 +235,7 @@ def generate_latent_examples_tex(
         [
             "\\bottomrule",
             "\\end{longtable}",
-            f"\\caption{{{filepath.replace('_', ' ')}}}",
+            f"\\caption{{{caption}}}",
             "\\end{table}",
         ]
     )
@@ -277,6 +289,20 @@ def prettify_latent(filename: str) -> str:
     )
 
 
+def parse_latent(filename: str) -> dict | None:
+    pattern = r"(pythia-\d+m)-layer-(\d+)-([\w-]+)-(in|out)-(\d+)-b\d+-t\d+\.tex"
+    match = re.match(pattern, os.path.basename(filename))
+    if match:
+        return {
+            "model": match.group(1),
+            "layer": int(match.group(2)),
+            "stat": match.group(3),
+            "sae": match.group(4),
+            "index": int(match.group(5)),
+        }
+    return None
+
+
 if __name__ == "__main__":
     max_rows = 12
 
@@ -291,9 +317,8 @@ if __name__ == "__main__":
 
     os.makedirs("features_tex", exist_ok=True)
     for filename in find_examples("features"):
-        sae_in = filename.startswith("examples-in")
+        sae_in = "examples-in" in filename
         latex_table = generate_latent_examples_tex(filename, sae_in, max_rows)
-        print(filename)
         if "ctx_len=16" in filename:
             for file in [filename.replace("csv", "tex"), prettify_latent(filename)]:
                 with open(file, "w", encoding="utf-8") as f:
