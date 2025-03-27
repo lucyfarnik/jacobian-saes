@@ -192,9 +192,9 @@ def generate_latent_examples_tex(
         )
     else:
         caption = (
-            f"{info.model_name}, layer {info.layer}. "  #
+            f"{info.model_name} layer {info.layer}. "  #
             f"{info.sae} SAE latent index {info.index}. "  #
-            f"Jacobian elements sorted by {info.stat}."
+            # f"Jacobian elements sorted by {info.stat}."
         )
 
     df = pd.read_csv(filepath)
@@ -205,10 +205,7 @@ def generate_latent_examples_tex(
             return None
         df = df.head(max_rows)
 
-    for col in [
-        "tokens",
-        "sae_acts",
-    ]:
+    for col in ["tokens", "sae_acts"]:
         df[col] = df[col].apply(ast.literal_eval)
 
     type_name = "sae_acts_in" if sae_in else "sae_acts_out"
@@ -219,7 +216,7 @@ def generate_latent_examples_tex(
         return f"{COLORS[type_name]}!{normalized * 100:.3f}"
 
     latex_output = [
-        "\\begin{table}",
+        "\\begin{subfigure}{\\linewidth}",
         "\\centering",
         "\\begin{longtable}{lr}",
         "\\toprule",
@@ -257,7 +254,7 @@ def generate_latent_examples_tex(
             "\\bottomrule",
             "\\end{longtable}",
             f"\\caption{{{caption}}}",
-            "\\end{table}",
+            "\\end{subfigure}",
         ]
     )
 
@@ -302,6 +299,33 @@ def prettify_filename(filename: str) -> str:
         .replace(",", "-")
         .replace("_", "-")
     )
+
+
+@dataclass
+class StatsInfo:
+    model_name: str
+    layer: int
+    latents: int
+
+
+# stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv
+# stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv
+# stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv
+def parse_filename_stats(filename: str) -> StatsInfo | None:
+    pattern = r"stats0_Layer(\d+)-(\d+)"
+    match = re.match(pattern, os.path.basename(filename))
+    if match:
+        latents = int(match.group(2))
+        return StatsInfo(
+            model_name={
+                32768: "Pythia-70m",
+                49152: "Pythia-160m",
+                65536: "Pythia-410m",
+            }[latents],
+            layer=int(match.group(1)),
+            latents=latents,
+        )
+    return None
 
 
 @dataclass
@@ -411,6 +435,73 @@ def generate_main() -> None:
             f.write("\\clearpage\n\n")
 
 
+def generate_combined(filename_stats: str, max_rows: int = 12) -> None:
+    features_dir = filename_stats.replace("stats0_", "features/")
+    features_dir = features_dir.replace(".csv", "")
+    features_filename = (
+        f"{features_dir}/examples-#_stas_c4-en-10k,train,batch_size=32,ctx_len=16.csv"
+    )
+
+    info = parse_filename_stats(filename_stats)
+    assert info is not None
+
+    df_stats = pd.read_csv(filename_stats)
+
+    texes = []
+
+    for index, row in df_stats.iterrows():
+        sae_index_in = int(row["i"])
+        sae_index_out = int(row["j"])
+        count = int(row["count"])
+        mean = float(row["mean"])
+        std = float(row["std"])
+
+        features_filename_in = features_filename.replace("#", f"in-{sae_index_in}")
+        features_filename_out = features_filename.replace("#", f"out-{sae_index_out}")
+
+        try:
+            tex_in = generate_latent_examples_tex(features_filename_in, True, max_rows)
+            tex_out = generate_latent_examples_tex(
+                features_filename_out, False, max_rows
+            )
+        except FileNotFoundError:
+            continue
+        if tex_in is None or tex_out is None:
+            continue
+
+        caption = f"""The top 12 examples that produce the maximum latent activations for the input and output SAE latents with indices {sae_index_in} and {sae_index_out}, respectively.
+The Jacobian SAE pair was trained on layer {info.layer} of {info.model_name} with an expansion factor of $R=64$ and sparsity $k=32$.
+The examples were collected over the first 10K records of the English subset of the C4 text dataset with a context length of 16 tokens.
+The corresponding Jacobian element is non-zero for {count} tokens, and has a mean of \\num{{{mean:.3e}}} (rank {index}) and a standard deviation of \\num{{{std:.3e}}}."""
+
+        tex = "\n".join(
+            [
+                "\\begin{figure}",
+                "\\centering",
+                tex_in,
+                tex_out,
+                f"\\caption{{{caption}}}",
+                "\\end{figure}",
+            ]
+        )
+
+        combined_filename = f"combined-{info.model_name.lower()}-layer-{info.layer}-mean-{index:02d}-in-{sae_index_in}-out-{sae_index_out}.tex"
+        with open(f"combined_tex/{combined_filename}", "w", encoding="utf-8") as f:
+            f.write(tex)
+        texes.append(tex + "\n\\clearpage\n")
+
+    all_filename = (
+        f"combined_tex/combined-{info.model_name.lower()}-layer-{info.layer}.tex"
+    )
+    with open(all_filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(texes))
+
+
 if __name__ == "__main__":
-    generate_tables()
-    generate_main()
+    # generate_tables()
+    # generate_main()
+
+    os.makedirs("combined_tex", exist_ok=True)
+    generate_combined("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv")
+    generate_combined("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+    generate_combined("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")

@@ -178,6 +178,7 @@ slurm-*.out
 *.safetensors
 eval_results/
 
+combined_tex/**/*.tex
 features/**/*.tex
 features_tex/**/*.tex
 feature_pairs/**/*.tex
