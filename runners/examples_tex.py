@@ -87,7 +87,7 @@ def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> st
         caption = (
             f"{info.model_name}, layer {info.layer}. "  #
             f"Input SAE latent index {info.sae_index_in}. "  #
-            f"Output SAE latent index {info.sae_index_in}. "  #
+            f"Output SAE latent index {info.sae_index_out}. "  #
             f"Jacobian elements sorted by {info.stat}."
         )
 

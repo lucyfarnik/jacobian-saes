@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from itertools import product
 from pprint import pprint
-from typing import Callable, Iterable, Literal, NamedTuple, Sequence
+from typing import Callable, Iterable, NamedTuple, Sequence
 
 import baukit  # type: ignore
 import einops
@@ -555,11 +555,7 @@ def save_pair_stats(filename: str, max_rows: int = 5) -> None:
         )
 
 
-def main(
-    checkpoint_dirpath: str,
-    examples_filename: str,
-    mode: Literal["pair", "latent"],
-) -> None:
+def main(checkpoint_dirpath: str, examples_filename: str, mode: str) -> None:
     with open(os.path.join(checkpoint_dirpath, "cfg.json"), "r") as f:
         cfg = json.load(f)
     model_name = cfg["model_name"]
@@ -644,32 +640,29 @@ def main(
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--mode", "-m", type=str)
+    parser.add_argument("--rows", "-r", type=int)
     parser.add_argument("--stat", "-s", type=str)
     args = parser.parse_args()
-    mode = args.mode
+    rows = args.rows
     stat = args.stat
 
-    assert mode in ["pair", "latent"], f"Unknown mode: {mode}"
-    mode: Literal["pair", "latent"]
+    save_pair_stats("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv", rows)
+    save_pair_stats("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv", rows)
+    save_pair_stats("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv", rows)
 
-    max_rows = 32
-    # save_pair_stats("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv", max_rows)
-    # save_pair_stats("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv", max_rows)
-    # save_pair_stats("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv", max_rows)
-
-    main(
-        "checkpoints/yih5o5jd/final_300003328",
-        f"stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_{stat}.csv",
-        mode,
-    )
-    main(
-        "checkpoints/4yzpocwn/final_300003328",
-        f"stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
-        mode,
-    )
-    main(
-        "checkpoints/1flyawyo/final_300003328",
-        f"stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
-        mode,
-    )
+    for mode in ["pair", "latent"]:
+        main(
+            "checkpoints/yih5o5jd/final_300003328",
+            f"stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_{stat}.csv",
+            mode,
+        )
+        main(
+            "checkpoints/4yzpocwn/final_300003328",
+            f"stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
+            mode,
+        )
+        main(
+            "checkpoints/1flyawyo/final_300003328",
+            f"stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
+            mode,
+        )
