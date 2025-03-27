@@ -394,6 +394,7 @@ def generate_main() -> None:
     with open("main.tex", "w", encoding="utf-8") as f:
         for f1, f2, f3 in texs:
             f.write(f"\\input{{{f1}}}\n")
+            f.write("\\clearpage\n")
             f.write(f"\\input{{{f2}}}\n")
             f.write(f"\\input{{{f3}}}\n")
             f.write("\\clearpage\n\n")
