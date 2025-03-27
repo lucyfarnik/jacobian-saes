@@ -29,8 +29,8 @@ TOK_SPECIAL_CHARS = {
     "âĢĺ": "'",
     "âĢĻ": "'",
     "Ġ": " ",
-    "Ċ": "\n",
-    "ĉ": "\t",
+    "Ċ": "\\n",
+    "ĉ": "\\t",
 }
 
 TEX_SPECIAL_CHARS = {
@@ -211,7 +211,7 @@ def generate_latent_examples_tex(
 
     def get_color(value: float) -> str:
         max_val = float(df["sae_acts_max"].max())
-        normalized = float(value) / max_val if max_val != 0 else 0
+        normalized = float(value) / max_val
         return f"{COLORS[type_name]}!{normalized * 100:.3f}"
 
     latex_output = [
@@ -225,6 +225,9 @@ def generate_latent_examples_tex(
 
     for _, row in df.iterrows():
         tokens = row["tokens"]
+
+        if all(t == "<|endoftext|>" for t, v in zip(tokens, row["sae_acts"]) if v != 0):
+            continue
 
         for value_col in ["sae_acts"]:
             values = row[value_col]
