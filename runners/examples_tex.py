@@ -77,7 +77,9 @@ def clean_token_for_latex(token: str) -> str:
     return cleaned
 
 
-def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> str:
+def generate_pair_examples_tex(
+    filepath: str, max_rows: int | None = None
+) -> str | None:
     info = parse_filename_pair(prettify_filename_pair(filepath))
     if info is None:
         raise ValueError(
@@ -101,6 +103,8 @@ def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> st
     }
 
     if max_rows is not None:
+        if len(df) < max_rows:
+            return None
         df = df.head(max_rows)
 
     for col in [
@@ -123,7 +127,7 @@ def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> st
             return f"{COLORS[type_name]}!{normalized * 100:.3f}"
 
     latex_output = [
-        "\\begin{table}",
+        "\\begin{figure}",
         "\\centering",
         "\\begin{longtable}{lrl}",
         "\\toprule",
@@ -171,7 +175,7 @@ def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> st
             "\\bottomrule",
             "\\end{longtable}",
             f"\\caption{{{caption}}}",
-            "\\end{table}",
+            "\\end{figure}",
         ]
     )
 
@@ -180,7 +184,7 @@ def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> st
 
 def generate_latent_examples_tex(
     filepath: str, sae_in: bool, max_rows: int | None = None
-) -> str:
+) -> str | None:
     info = parse_filename_latent(prettify_filename_latent(filepath))
     if info is None:
         raise ValueError(
@@ -197,6 +201,8 @@ def generate_latent_examples_tex(
     df = df.sort_values("sae_acts_max", ascending=False)
 
     if max_rows is not None:
+        if len(df) < max_rows:
+            return None
         df = df.head(max_rows)
 
     for col in [
@@ -215,9 +221,9 @@ def generate_latent_examples_tex(
     latex_output = [
         "\\begin{table}",
         "\\centering",
-        "\\begin{longtable}{rl}",
+        "\\begin{longtable}{lr}",
         "\\toprule",
-        "Max. abs. value & Example tokens \\\\",
+        "Example tokens & Max. activation \\\\",
         "\\midrule",
     ]
 
@@ -242,8 +248,7 @@ def generate_latent_examples_tex(
 
             tokens_str = " ".join(colored_tokens)
 
-            latex_output.append(f"\\num{{{max_value:.3e}}} & {tokens_str} \\\\")
-
+            latex_output.append(f"{tokens_str} & \\num{{{max_value:.3e}}} \\\\")
             latex_output.append("\\midrule")
 
     latex_output.pop()  # remove last \midrule
@@ -355,6 +360,8 @@ def generate_tables() -> None:
     os.makedirs("feature_pairs_tex", exist_ok=True)
     for filename in tqdm(find_examples("feature_pairs")):
         latex_table = generate_pair_examples_tex(filename, max_rows)
+        if latex_table is None:
+            continue
         if "ctx_len=16" in filename:
             for file in [
                 filename.replace("csv", "tex"),
@@ -362,11 +369,14 @@ def generate_tables() -> None:
             ]:
                 with open(file, "w", encoding="utf-8") as f:
                     f.write(latex_table)
+        # break  # for testing
 
     os.makedirs("features_tex", exist_ok=True)
     for filename in tqdm(find_examples("features")):
         sae_in = "examples-in" in filename
         latex_table = generate_latent_examples_tex(filename, sae_in, max_rows)
+        if latex_table is None:
+            continue
         if "ctx_len=16" in filename:
             for file in [
                 filename.replace("csv", "tex"),
@@ -374,6 +384,7 @@ def generate_tables() -> None:
             ]:
                 with open(file, "w", encoding="utf-8") as f:
                     f.write(latex_table)
+        # break  # for testing
 
 
 def generate_main() -> None:
