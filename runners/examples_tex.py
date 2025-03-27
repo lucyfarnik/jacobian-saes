@@ -192,9 +192,8 @@ def generate_latent_examples_tex(
         )
     else:
         caption = (
-            f"{info.model_name} layer {info.layer}. "  #
-            f"{info.sae} SAE latent index {info.index}. "  #
-            # f"Jacobian elements sorted by {info.stat}."
+            f"Layer {info.layer} of {info.model_name}. "  #
+            f"{info.sae} SAE latent index {info.index}."  #
         )
 
     df = pd.read_csv(filepath)
