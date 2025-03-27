@@ -318,7 +318,7 @@ def parse_filename_pair(filename: str) -> PairInfo | None:
             model_name=match.group(1).replace("pythia", "Pythia"),
             layer=int(match.group(2)),
             stat=match.group(3),
-            sae_index_in=int(match.group(5)),
+            sae_index_in=int(match.group(4)),
             sae_index_out=int(match.group(5)),
         )
     return None
@@ -349,8 +349,9 @@ def parse_filename_latent(filename: str) -> LatentInfo | None:
     return None
 
 
-if __name__ == "__main__":
+def generate_tables() -> None:
     max_rows = 12
+
     os.makedirs("feature_pairs_tex", exist_ok=True)
     for filename in tqdm(find_examples("feature_pairs")):
         latex_table = generate_pair_examples_tex(filename, max_rows)
@@ -361,6 +362,7 @@ if __name__ == "__main__":
             ]:
                 with open(file, "w", encoding="utf-8") as f:
                     f.write(latex_table)
+
     os.makedirs("features_tex", exist_ok=True)
     for filename in tqdm(find_examples("features")):
         sae_in = "examples-in" in filename
@@ -372,3 +374,31 @@ if __name__ == "__main__":
             ]:
                 with open(file, "w", encoding="utf-8") as f:
                     f.write(latex_table)
+
+
+def generate_main() -> None:
+    texs: list[tuple[str, str, str]] = []
+    for dirpath, _dirnames, filenames in os.walk("feature_pairs_tex"):
+        for filename in filenames:
+            info = parse_filename_pair(filename)
+            if info is not None:
+                f1 = os.path.join(dirpath, filename)
+                prefix = os.path.join(
+                    "features_tex",
+                    f"features-{info.model_name.lower()}-layer-{info.layer}-{info.stat}",
+                )
+                f2 = f"{prefix}-in-{info.sae_index_in}-b32-t16.tex"
+                f3 = f"{prefix}-out-{info.sae_index_out}-b32-t16.tex"
+                texs.append((f1, f2, f3))
+    texs = sorted(texs, key=lambda x: x[0])
+    with open("main.tex", "w", encoding="utf-8") as f:
+        for f1, f2, f3 in texs:
+            f.write(f"\\input{{{f1}}}\n")
+            f.write(f"\\input{{{f2}}}\n")
+            f.write(f"\\input{{{f3}}}\n")
+            f.write("\\clearpage\n\n")
+
+
+if __name__ == "__main__":
+    generate_tables()
+    generate_main()

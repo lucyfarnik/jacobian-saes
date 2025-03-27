@@ -182,3 +182,4 @@ features/**/*.tex
 features_tex/**/*.tex
 feature_pairs/**/*.tex
 feature_pairs_tex/**/*.tex
+main.tex
