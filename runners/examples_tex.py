@@ -2,8 +2,10 @@ import ast
 import os
 import re
 import unicodedata
+from dataclasses import dataclass
 
 import pandas as pd
+from tqdm import tqdm
 
 COLORS = {
     "jacobian_positive": "Cyan",
@@ -76,6 +78,19 @@ def clean_token_for_latex(token: str) -> str:
 
 
 def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> str:
+    info = parse_filename_pair(prettify_filename_pair(filepath))
+    if info is None:
+        raise ValueError(
+            f"Failed to parse filename: {prettify_filename_pair(filepath)}"
+        )
+    else:
+        caption = (
+            f"{info.model_name}, layer {info.layer}. "  #
+            f"Input SAE latent index {info.sae_index_in}. "  #
+            f"Output SAE latent index {info.sae_index_in}. "  #
+            f"Jacobian elements sorted by {info.stat}."
+        )
+
     df = pd.read_csv(filepath)
     df = df.sort_values("jacobian_max", ascending=False)
 
@@ -155,7 +170,7 @@ def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> st
         [
             "\\bottomrule",
             "\\end{longtable}",
-            f"\\caption{{{filepath.replace('_', ' ')}}}",
+            f"\\caption{{{caption}}}",
             "\\end{table}",
         ]
     )
@@ -166,16 +181,17 @@ def generate_pair_examples_tex(filepath: str, max_rows: int | None = None) -> st
 def generate_latent_examples_tex(
     filepath: str, sae_in: bool, max_rows: int | None = None
 ) -> str:
-    parsed = parse_latent(prettify_latent(filepath))
-    if parsed is None:
-        caption = filepath.replace("_", " ")
+    info = parse_filename_latent(prettify_filename_latent(filepath))
+    if info is None:
+        raise ValueError(
+            f"Failed to parse filename: {prettify_filename_latent(filepath)}"
+        )
     else:
-        model = parsed["model"]
-        layer = parsed["layer"]
-        stat = parsed["stat"]
-        sae = parsed["sae"]
-        index = parsed["index"]
-        caption = f"{model} layer {layer} {stat} {sae} {index}"
+        caption = (
+            f"{info.model_name}, layer {info.layer}. "  #
+            f"{info.sae} SAE latent index {info.index}. "  #
+            f"Jacobian elements sorted by {info.stat}."
+        )
 
     df = pd.read_csv(filepath)
     df = df.sort_values("sae_acts_max", ascending=False)
@@ -252,74 +268,107 @@ def find_examples(top: str = "feature_pairs") -> list[str]:
     return dirpaths
 
 
-def prettify_pair(filename: str) -> str:
+def prettify_filename_pair(filename: str) -> str:
     return os.path.join(
-        "feature_pairs_tex",
-        filename.replace("/", "_")
-        .replace("csv", "tex")
-        .replace("feature_pairs_", "")
-        .replace("Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08", "pythia-70m-layer-3")
-        .replace("Layer7-49152-J1-LR5.0e-04-k32-T3.0e+08", "pythia-160m-layer-7")
-        .replace("Layer15-65536-J1-LR5.0e-04-k32-T3.0e+08", "pythia-410m-layer-15")
-        .replace("stas_c4-en-10k,train,", "")
-        .replace("examples-", "in-")
-        .replace("-v-", "-out-")
-        .replace("batch_size=", "b")
-        .replace("ctx_len=", "t")
-        .replace(",", "-")
-        .replace("_", "-"),
+        "feature_pairs_tex", prettify_filename(filename.replace("feature_pairs_", ""))
     )
 
 
-def prettify_latent(filename: str) -> str:
+def prettify_filename_latent(filename: str) -> str:
     return os.path.join(
-        "features_tex",
+        "features_tex", prettify_filename(filename.replace("features_", ""))
+    )
+
+
+def prettify_filename(filename: str) -> str:
+    return (
         filename.replace("/", "_")
         .replace("csv", "tex")
-        .replace("features_", "")
         .replace("Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08", "pythia-70m-layer-3")
+        .replace("Layer3-32768-J1-LR5.0e-04-Tokens3.0e+08", "pythia-70m-layer-3")
+        .replace("Layer7-49152-J1-LR5.0e-04-k32-T3.0e+08", "pythia-160m-layer-7")
         .replace("Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08", "pythia-160m-layer-7")
+        .replace("Layer15-65536-J1-LR5.0e-04-k32-T3.0e+08", "pythia-410m-layer-15")
         .replace("Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08", "pythia-410m-layer-15")
         .replace("stas_c4-en-10k,train,", "")
         .replace("examples-", "")
         .replace("batch_size=", "b")
         .replace("ctx_len=", "t")
         .replace(",", "-")
-        .replace("_", "-"),
+        .replace("_", "-")
     )
 
 
-def parse_latent(filename: str) -> dict | None:
-    pattern = r"(pythia-\d+m)-layer-(\d+)-([\w-]+)-(in|out)-(\d+)-b\d+-t\d+\.tex"
+@dataclass
+class PairInfo:
+    model_name: str
+    layer: int
+    stat: str
+    sae_index_in: int
+    sae_index_out: int
+
+
+def parse_filename_pair(filename: str) -> PairInfo | None:
+    pattern = (
+        r"feature-pairs-(pythia-\d+m)-layer-(\d+)-([\w-]+)-(\d+)-v-(\d+)-b\d+-t\d+\.tex"
+    )
     match = re.match(pattern, os.path.basename(filename))
     if match:
-        return {
-            "model": match.group(1),
-            "layer": int(match.group(2)),
-            "stat": match.group(3),
-            "sae": match.group(4),
-            "index": int(match.group(5)),
-        }
+        return PairInfo(
+            model_name=match.group(1).replace("pythia", "Pythia"),
+            layer=int(match.group(2)),
+            stat=match.group(3),
+            sae_index_in=int(match.group(5)),
+            sae_index_out=int(match.group(5)),
+        )
+    return None
+
+
+@dataclass
+class LatentInfo:
+    model_name: str
+    layer: int
+    stat: str
+    sae: str
+    index: int
+
+
+def parse_filename_latent(filename: str) -> LatentInfo | None:
+    pattern = (
+        r"features-(pythia-\d+m)-layer-(\d+)-([\w-]+)-(in|out)-(\d+)-b\d+-t\d+\.tex"
+    )
+    match = re.match(pattern, os.path.basename(filename))
+    if match:
+        return LatentInfo(
+            model_name=match.group(1).replace("pythia", "Pythia"),
+            layer=int(match.group(2)),
+            stat=match.group(3),
+            sae=match.group(4).replace("in", "Input").replace("out", "Output"),
+            index=int(match.group(5)),
+        )
     return None
 
 
 if __name__ == "__main__":
     max_rows = 12
-
     os.makedirs("feature_pairs_tex", exist_ok=True)
-    # for filename in find_examples("feature_pairs"):
-    #     latex_table = generate_pair_examples_tex(filename, max_rows)
-    #     print(filename)
-    #     if "ctx_len=16" in filename:
-    #         for file in [filename.replace("csv", "tex"), prettify_pair(filename)]:
-    #             with open(file, "w", encoding="utf-8") as f:
-    #                 f.write(latex_table)
-
+    for filename in tqdm(find_examples("feature_pairs")):
+        latex_table = generate_pair_examples_tex(filename, max_rows)
+        if "ctx_len=16" in filename:
+            for file in [
+                filename.replace("csv", "tex"),
+                prettify_filename_pair(filename),
+            ]:
+                with open(file, "w", encoding="utf-8") as f:
+                    f.write(latex_table)
     os.makedirs("features_tex", exist_ok=True)
-    for filename in find_examples("features"):
+    for filename in tqdm(find_examples("features")):
         sae_in = "examples-in" in filename
         latex_table = generate_latent_examples_tex(filename, sae_in, max_rows)
         if "ctx_len=16" in filename:
-            for file in [filename.replace("csv", "tex"), prettify_latent(filename)]:
+            for file in [
+                filename.replace("csv", "tex"),
+                prettify_filename_latent(filename),
+            ]:
                 with open(file, "w", encoding="utf-8") as f:
                     f.write(latex_table)

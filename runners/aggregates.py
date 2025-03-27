@@ -21,8 +21,10 @@ from simple_parsing import Serializable
 from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformer_lens import HookedTransformer  # type: ignore
-from transformer_lens import utils
+from transformer_lens import (
+    HookedTransformer,  # type: ignore
+    utils,
+)
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -298,7 +300,6 @@ class LatentExamples(Stat):
         rows = {}
         for batch_index, token_index, topk_index in mask_BTK.nonzero():
             batch_index_ = batch_index.item()
-            token_index_ = token_index.item()
 
             if batch_index_ not in rows:
                 rows[batch_index_] = {
@@ -548,18 +549,10 @@ def save_pair_stats(filename: str, max_rows: int = 5) -> None:
     df = pd.read_csv(filename)
     df.describe().transpose().to_csv(filename.replace(".csv", "_describe.csv"))
     df.head(max_rows).to_csv(filename.replace(".csv", "_count.csv"), index=False)
-    df.sort_values("mean", ascending=False).head(max_rows).to_csv(
-        filename.replace(".csv", "_mean.csv"), index=False
-    )
-    df.sort_values("std", ascending=False).head(max_rows).to_csv(
-        filename.replace(".csv", "_std.csv"), index=False
-    )
-    df.sort_values("abs_mean", ascending=False).head(max_rows).to_csv(
-        filename.replace(".csv", "_abs_mean.csv"), index=False
-    )
-    df.sort_values("abs_std", ascending=False).head(max_rows).to_csv(
-        filename.replace(".csv", "_abs_std.csv"), index=False
-    )
+    for column in ["mean", "std", "abs_mean", "abs_std"]:
+        df.sort_values(column, ascending=False).head(max_rows).to_csv(
+            filename.replace(".csv", f"_{column}.csv"), index=False
+        )
 
 
 def main(
