@@ -29,8 +29,8 @@ TOK_SPECIAL_CHARS = {
     "âĢĺ": "'",
     "âĢĻ": "'",
     "Ġ": " ",
-    "Ċ": "\\n",
-    "ĉ": "\\t",
+    "Ċ": "\\\\n",
+    "ĉ": "\\\\t",
 }
 
 TEX_SPECIAL_CHARS = {
@@ -57,9 +57,9 @@ def clean_token_for_latex(token: str) -> str:
     token = token.replace("\\", "\\textbackslash{}")
     for char, repl in TOK_SPECIAL_CHARS.items():
         token = token.replace(char, repl)
-    for char, repl in TEX_SPECIAL_CHARS.items():
-        token = token.replace(char, repl)
-    token = token.replace("Ġ", " ").replace("Ċ", "\\newline ")
+    # for char, repl in TEX_SPECIAL_CHARS.items():
+    #     token = token.replace(char, repl)
+    # token = token.replace("Ġ", " ").replace("Ċ", "\\newline ")
 
     cleaned = ""
     for char in token:
@@ -239,14 +239,27 @@ def generate_latent_examples_tex(
                     continue
 
                 clean_token = clean_token_for_latex(token)
-                if clean_token.strip():
-                    color = get_color(float(val))
-                    colored_tokens.append(
-                        f"\\colorbox{{{color}}}{{\\strut {clean_token}}}"
-                    )
+                if clean_token == "":
+                    continue
+                clean_token = re.sub(
+                    r"( +)$", lambda m: "~" * len(m.group(1)), clean_token
+                )
 
-            tokens_str = " ".join(colored_tokens)
+                if "$" in clean_token:  # awful hacks
+                    inline = clean_token.replace("$", "\\$")
+                elif clean_token == "%":
+                    inline = "\\%"
+                elif clean_token.startswith("%"):
+                    inline = "\\%" + f"\\lstinline{{{clean_token[1:]}}}"
+                elif len(clean_token.replace("~", "").replace(" ", "")) == 0:
+                    inline = "\\space"
+                else:
+                    inline = f"\\lstinline{{{clean_token}}}"
 
+                color = get_color(float(val))
+                colored_tokens.append(f"\\colorbox{{{color}}}{{\\strut{inline}}}")
+
+            tokens_str = "".join(colored_tokens)
             latex_output.append(f"{tokens_str} & \\num{{{max_value:.3e}}} \\\\")
             latex_output.append("\\midrule")
 
@@ -488,8 +501,8 @@ The corresponding Jacobian element is non-zero for {count} tokens, and has a mea
         )
 
         combined_filename = f"combined-{info.model_name.lower()}-layer-{info.layer}-mean-{index:02d}-in-{sae_index_in}-out-{sae_index_out}.tex"
-        with open(f"combined_tex/{combined_filename}", "w", encoding="utf-8") as f:
-            f.write(tex)
+        # with open(f"combined_tex/{combined_filename}", "w", encoding="utf-8") as f:
+        #     f.write(tex)
         texes.append(tex + "\n\\clearpage\n")
 
     all_filename = (
