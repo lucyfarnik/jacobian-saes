@@ -428,11 +428,12 @@ class PairExamples(Stat):
 
 
 def get_pair_examples(
-    filename: str, model: LanguageModel | Envoy
+    filename: str, model: LanguageModel | Envoy, offset: int = 0
 ) -> list[PairExamples]:
-    sae_indices = [
-        (int(i), int(j)) for i, j in pd.read_csv(filename)[["i", "j"]].values
-    ]
+    df = pd.read_csv(filename)
+    if offset > 0:
+        df = df.iloc[offset:]
+    sae_indices = [(int(i), int(j)) for i, j in df[["i", "j"]].values]
     return [
         PairExamples(model.tokenizer, sae_index_in, sae_index_out)  # type: ignore
         for sae_index_in, sae_index_out in sae_indices
@@ -555,7 +556,9 @@ def save_pair_stats(filename: str, max_rows: int = 5) -> None:
         )
 
 
-def main(checkpoint_dirpath: str, examples_filename: str, mode: str) -> None:
+def main(
+    checkpoint_dirpath: str, examples_filename: str, mode: str, offset: int = 0
+) -> None:
     with open(os.path.join(checkpoint_dirpath, "cfg.json"), "r") as f:
         cfg = json.load(f)
     model_name = cfg["model_name"]
@@ -640,11 +643,15 @@ def main(checkpoint_dirpath: str, examples_filename: str, mode: str) -> None:
 
 if __name__ == "__main__":
     parser = ArgumentParser()
+    parser.add_argument("--offset", "-o", type=int)
     parser.add_argument("--rows", "-r", type=int)
     parser.add_argument("--stat", "-s", type=str)
     args = parser.parse_args()
+    offset = args.offset
     rows = args.rows
     stat = args.stat
+
+    assert offset < rows
 
     save_pair_stats("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv", rows)
     save_pair_stats("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv", rows)
@@ -655,14 +662,17 @@ if __name__ == "__main__":
             "checkpoints/yih5o5jd/final_300003328",
             f"stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_{stat}.csv",
             mode,
+            offset,
         )
         main(
             "checkpoints/4yzpocwn/final_300003328",
             f"stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
             mode,
+            offset,
         )
         main(
             "checkpoints/1flyawyo/final_300003328",
             f"stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
             mode,
+            offset,
         )

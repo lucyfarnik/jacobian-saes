@@ -34,22 +34,23 @@ TOK_SPECIAL_CHARS = {
 }
 
 TEX_SPECIAL_CHARS = {
-    "_": "\\_",
-    "&": "\\&",
-    "%": "\\%",
-    "#": "\\#",
-    "{": "\\{",
-    "}": "\\}",
-    "$": "\\$",
-    "^": "\\textasciicircum{}",
-    "~": "\\textasciitilde{}",
-    "<": "\\textless{}",
-    ">": "\\textgreater{}",
-    "|": "\\textbar{}",
-    "*": "\\textasteriskcentered{}",
-    "`": "\\textasciigrave{}",
-    "'": "\\textquotesingle{}",
-    '"': "\\textquotedbl{}",
+    # "_": "\\_",
+    # "&": "\\&",
+    # "%": "\\%",
+    # "#": "\\#",
+    # "{": "\\{",
+    # "}": "\\}",
+    # "$": "\\$",
+    # "^": "\\textasciicircum{}",
+    # "~": "\\textasciitilde{}",
+    # "<": "\\textless{}",
+    # ">": "\\textgreater{}",
+    # "|": "\\textbar{}",
+    # "*": "\\textasteriskcentered{}",
+    # "`": "\\textasciigrave{}",
+    # "'": "\\textquotesingle{}",
+    # '"': "\\textquotedbl{}",
+    "^": "\\^",
 }
 
 
@@ -57,8 +58,8 @@ def clean_token_for_latex(token: str) -> str:
     token = token.replace("\\", "\\textbackslash{}")
     for char, repl in TOK_SPECIAL_CHARS.items():
         token = token.replace(char, repl)
-    # for char, repl in TEX_SPECIAL_CHARS.items():
-    #     token = token.replace(char, repl)
+    for char, repl in TEX_SPECIAL_CHARS.items():
+        token = token.replace(char, repl)
     # token = token.replace("Ġ", " ").replace("Ċ", "\\newline ")
 
     cleaned = ""
@@ -501,8 +502,8 @@ The corresponding Jacobian element is non-zero for {count} tokens, and has a mea
         )
 
         combined_filename = f"combined-{info.model_name.lower()}-layer-{info.layer}-mean-{index:02d}-in-{sae_index_in}-out-{sae_index_out}.tex"
-        # with open(f"combined_tex/{combined_filename}", "w", encoding="utf-8") as f:
-        #     f.write(tex)
+        with open(f"combined_tex/{combined_filename}", "w", encoding="utf-8") as f:
+            f.write(tex)
         texes.append(tex + "\n\\clearpage\n")
 
     all_filename = (
@@ -513,8 +514,8 @@ The corresponding Jacobian element is non-zero for {count} tokens, and has a mea
 
 
 if __name__ == "__main__":
-    # generate_tables()
-    # generate_main()
+    generate_tables()
+    generate_main()
 
     os.makedirs("combined_tex", exist_ok=True)
     generate_combined("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv")
