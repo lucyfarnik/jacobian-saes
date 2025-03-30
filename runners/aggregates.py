@@ -345,6 +345,35 @@ def get_latent_examples(
     return latent_examples
 
 
+def get_out_in_examples(
+    filename_out: str,
+    filename_in: str,
+    model: LanguageModel | Envoy,
+    max_out: int = 64,
+    max_in: int = 16,
+) -> list[LatentExamples]:
+    df_out = pd.read_csv(filename_out)
+    sae_indices_out = []
+    for sae_index_out in df_out.head(max_out)["j"].values:
+        if int(sae_index_out) not in sae_indices_out:
+            sae_indices_out.append(int(sae_index_out))
+
+    df_in = pd.read_csv(filename_in)
+    sae_indices_in = []
+    for sae_index_out in sae_indices_out:
+        for sae_index_in in df_in[df_in["j"] == sae_index_out].head(max_in)["i"].values:
+            print(f"{sae_index_in} -> {sae_index_out}")
+            if int(sae_index_in) not in sae_indices_in:
+                sae_indices_in.append(int(sae_index_in))
+
+    latent_examples = []
+    for sae_index_in in sae_indices_in:
+        latent_examples.append(LatentExamples(model.tokenizer, True, sae_index_in))  # type: ignore
+    for sae_index_out in sae_indices_out:
+        latent_examples.append(LatentExamples(model.tokenizer, False, sae_index_out))  # type: ignore
+    return latent_examples
+
+
 class PairExamples(Stat):
     def __init__(
         self,
@@ -557,7 +586,11 @@ def save_pair_stats(filename: str, max_rows: int = 5) -> None:
 
 
 def main(
-    checkpoint_dirpath: str, examples_filename: str, mode: str, offset: int = 0
+    checkpoint_dirpath: str,
+    filename: str,
+    mode: str,
+    offset: int = 0,
+    filename_in: str | None = None,
 ) -> None:
     with open(os.path.join(checkpoint_dirpath, "cfg.json"), "r") as f:
         cfg = json.load(f)
@@ -570,11 +603,16 @@ def main(
 
     model, dataloader = get_dataloader(examples_config)
 
+    # TODO: move outside fn
     # aggregates: list[Stat] = [Pair()]
     if mode == "pair":
-        aggregates = get_pair_examples(examples_filename, model)
+        aggregates = get_pair_examples(filename, model)
+    elif mode == "latent":
+        aggregates = get_latent_examples(filename, model)
     else:
-        aggregates = get_latent_examples(examples_filename, model)
+        filename_out = filename
+        filename_in = filename_in or filename
+        aggregates = get_out_in_examples(filename_out, filename_in, model)
 
     sae_pair, mlp_with_act_grads = load_checkpoint(checkpoint_dirpath, examples_config)
 
@@ -635,7 +673,7 @@ def main(
         os.makedirs(dir, exist_ok=True)
         examples_dirpath = os.path.join(
             dir,
-            examples_filename.replace("stats0_", "").replace(".csv", ""),
+            filename.replace("stats0_", "").replace(".csv", ""),
         )
         _dataframe = aggregate.save(examples_config, examples_dirpath)
         # _dataframe.to_csv(f"stats{i}_{run_name}.csv", index=False)
@@ -643,36 +681,38 @@ def main(
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--offset", "-o", type=int)
-    parser.add_argument("--rows", "-r", type=int)
-    parser.add_argument("--stat", "-s", type=str)
+    parser.add_argument("--offset", "-o", type=int, default=0)
+    parser.add_argument("--rows", "-r", type=int, default=128)
+    parser.add_argument("--stat", "-s", type=str, default="mean")
     args = parser.parse_args()
-    offset = args.offset
-    rows = args.rows
-    stat = args.stat
+    assert args.offset < args.rows
 
-    assert offset < rows
+    checkpoints = [
+        "checkpoints/yih5o5jd/final_300003328",
+        "checkpoints/4yzpocwn/final_300003328",
+        "checkpoints/1flyawyo/final_300003328",
+    ]
+    filenames_stats = [
+        "stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv",
+        "stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv",
+        "stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv",
+    ]
+    filenames_stat = [
+        f"stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_{args.stat}.csv",
+        f"stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_{args.stat}.csv",
+        f"stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_{args.stat}.csv",
+    ]
 
-    save_pair_stats("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv", rows)
-    save_pair_stats("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv", rows)
-    save_pair_stats("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv", rows)
+    for filename_stats in filenames_stats:
+        save_pair_stats(filename_stats, args.rows)
 
-    for mode in ["pair", "latent"]:
-        main(
-            "checkpoints/yih5o5jd/final_300003328",
-            f"stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_{stat}.csv",
-            mode,
-            offset,
-        )
-        main(
-            "checkpoints/4yzpocwn/final_300003328",
-            f"stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
-            mode,
-            offset,
-        )
-        main(
-            "checkpoints/1flyawyo/final_300003328",
-            f"stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_{stat}.csv",
-            mode,
-            offset,
-        )
+    # modes = ["pair", "latent", "out_in"]
+    modes = ["out_in"]
+    for checkpoint, filename_stat, filename_stats, mode in zip(
+        checkpoints, filenames_stat, filenames_stats, modes
+    ):
+        print(f"checkpoint:     {checkpoint}")
+        print(f"filename_stat:  {filename_stat}")
+        print(f"filename_stats: {filename_stats}")
+        print(f"mode:           {mode}")
+        main(checkpoint, filename_stat, mode, args.offset, filename_in=filename_stats)

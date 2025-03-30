@@ -513,6 +513,33 @@ The corresponding Jacobian element is non-zero for {count} tokens, and has a mea
         f.write("\n".join(texes))
 
 
+def get_out_in_indices(
+    filename_out: str,
+    filename_in: str,
+    max_out: int = 128,
+    max_in: int = 64,
+) -> list[tuple[int, list[int]]]:
+    out_in_indices: list[tuple[int, list[int]]] = []
+
+    df_out = pd.read_csv(filename_out)
+    sae_indices_out = []
+    for sae_index_out in df_out.head(max_out)["j"].values:
+        sae_indices_out.append(int(sae_index_out))
+
+    df_in = pd.read_csv(filename_in)
+    for sae_index_out in sae_indices_out:
+        sae_indices_in = []
+        for sae_index_in in df_in[df_in["j"] == sae_index_out].head(max_in)["i"].values:
+            print(f"{sae_index_in} -> {sae_index_out}")
+            sae_indices_in.append(int(sae_index_in))
+        out_in_indices.append((sae_index_out, sae_indices_in))
+    return out_in_indices
+
+
+def generate_out_in():
+    pass
+
+
 if __name__ == "__main__":
     generate_tables()
     generate_main()
