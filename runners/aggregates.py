@@ -351,7 +351,9 @@ def get_out_in_examples(
     model: LanguageModel | Envoy,
     max_out: int = 64,
     max_in: int = 16,
-) -> list[LatentExamples]:
+) -> list[Stat]:
+    aggregates = []
+
     df_out = pd.read_csv(filename_out)
     sae_indices_out = []
     for sae_index_out in df_out.head(max_out)["j"].values:
@@ -363,16 +365,18 @@ def get_out_in_examples(
     sae_indices_in = []
     for sae_index_out in sae_indices_out:
         for sae_index_in in df_in[df_in["j"] == sae_index_out].head(max_in)["i"].values:
-            print(f"{sae_index_in} -> {sae_index_out}")
+            # print(f"{sae_index_in} -> {sae_index_out}")
             if int(sae_index_in) not in sae_indices_in:
                 sae_indices_in.append(int(sae_index_in))
 
-    latent_examples = []
+            aggregates.append(
+                PairExamples(model.tokenizer, sae_index_in, sae_index_out)  # type: ignore
+            )
     for sae_index_in in sae_indices_in:
-        latent_examples.append(LatentExamples(model.tokenizer, True, sae_index_in))  # type: ignore
+        aggregates.append(LatentExamples(model.tokenizer, True, sae_index_in))  # type: ignore
     for sae_index_out in sae_indices_out:
-        latent_examples.append(LatentExamples(model.tokenizer, False, sae_index_out))  # type: ignore
-    return latent_examples
+        aggregates.append(LatentExamples(model.tokenizer, False, sae_index_out))  # type: ignore
+    return aggregates
 
 
 class PairExamples(Stat):
@@ -683,7 +687,7 @@ def main(
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--offset", "-o", type=int, default=0)
-    parser.add_argument("--rows", "-r", type=int, default=128)
+    parser.add_argument("--rows", "-r", type=int, default=64)
     parser.add_argument("--stat", "-s", type=str, default="mean")
     args = parser.parse_args()
     assert args.offset < args.rows

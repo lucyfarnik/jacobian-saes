@@ -36,11 +36,12 @@ TOK_SPECIAL_CHARS = {
 TEX_SPECIAL_CHARS = {
     # "_": "\\_",
     # "&": "\\&",
-    # "%": "\\%",
+    "%": "\\%",
     # "#": "\\#",
     # "{": "\\{",
     # "}": "\\}",
     # "$": "\\$",
+    "^": "\\^",
     # "^": "\\textasciicircum{}",
     # "~": "\\textasciitilde{}",
     # "<": "\\textless{}",
@@ -50,7 +51,6 @@ TEX_SPECIAL_CHARS = {
     # "`": "\\textasciigrave{}",
     # "'": "\\textquotesingle{}",
     # '"': "\\textquotedbl{}",
-    "^": "\\^",
 }
 
 
@@ -518,8 +518,8 @@ The corresponding Jacobian element is non-zero for {count} tokens, and has a mea
 def get_out_in_indices(
     filename_out: str,
     filename_in: str,
-    max_out: int = 128,
-    max_in: int = 64,
+    max_out: int = 64,
+    max_in: int = 16,
 ) -> list[tuple[int, list[int]]]:
     out_in_indices: list[tuple[int, list[int]]] = []
 
@@ -533,7 +533,7 @@ def get_out_in_indices(
     for sae_index_out in sae_indices_out:
         sae_indices_in = []
         for sae_index_in in df_in[df_in["j"] == sae_index_out].head(max_in)["i"].values:
-            print(f"{sae_index_in} -> {sae_index_out}")
+            # print(f"{sae_index_in} -> {sae_index_out}")
             sae_indices_in.append(int(sae_index_in))
         out_in_indices.append((sae_index_out, sae_indices_in))
     return out_in_indices
@@ -542,10 +542,14 @@ def get_out_in_indices(
 def generate_out_in(
     filename_out: str,
     filename_in: str,
-    max_out: int = 128,
+    max_out: int = 64,
     max_in: int = 16,
     max_rows: int = 8,
 ):
+    feature_pairs_dir = filename_out.replace("stats0_", "feature_pairs/")
+    feature_pairs_dir = feature_pairs_dir.replace(".csv", "")
+    feature_pairs_filename = f"{feature_pairs_dir}/examples-#in-v-#out_stas_c4-en-10k,train,batch_size=32,ctx_len=16.tex"
+
     features_dir = filename_out.replace("stats0_", "features/")
     features_dir = features_dir.replace(".csv", "")
     features_filename = (
@@ -557,8 +561,8 @@ def generate_out_in(
 
     texes = []
 
-    for index, (sae_index_out, sae_indices_in) in enumerate(
-        get_out_in_indices(filename_out, filename_in, max_out, max_in)
+    for index, (sae_index_out, sae_indices_in) in tqdm(
+        enumerate(get_out_in_indices(filename_out, filename_in, max_out, max_in))
     ):
         tex = []
 
@@ -574,6 +578,21 @@ def generate_out_in(
             continue
 
         for sae_index_in in sae_indices_in:
+            feature_pairs_filename_ = feature_pairs_filename.replace(
+                "#out", str(sae_index_out)
+            )
+            feature_pairs_filename_ = feature_pairs_filename_.replace(
+                "#in", str(sae_index_in)
+            )
+
+            try:
+                tex_pair = generate_pair_examples_tex(feature_pairs_filename_, max_rows)
+            except Exception as exception:  # noqa: E722
+                print(exception)
+                tex_pair = None
+            if tex_pair is not None:
+                tex.append(tex_pair)
+
             features_filename_in = features_filename.replace("#", f"in-{sae_index_in}")
             try:
                 tex_in = generate_latent_examples_tex(
@@ -584,6 +603,7 @@ def generate_out_in(
                 tex.append(tex_in)
             except FileNotFoundError:
                 continue
+            tex.append("\n\\clearpage\n")
 
         if len(tex) == 0:
             continue
@@ -595,7 +615,7 @@ def generate_out_in(
 
         texes.append(tex + "\n\\clearpage\n")
 
-    all_filename = f"out_tex/combined-{info.model_name.lower()}-layer-{info.layer}.tex"
+    all_filename = f"out_tex/out-{info.model_name.lower()}-layer-{info.layer}.tex"
     with open(all_filename, "w", encoding="utf-8") as f:
         f.write("\n".join(texes))
 
