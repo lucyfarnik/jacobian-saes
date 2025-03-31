@@ -184,7 +184,7 @@ def generate_pair_examples_tex(
 
 
 def generate_latent_examples_tex(
-    filepath: str, sae_in: bool, max_rows: int | None = None
+    filepath: str, sae_in: bool, max_rows: int | None = None, subfigure: bool = True
 ) -> str | None:
     info = parse_filename_latent(prettify_filename_latent(filepath))
     if info is None:
@@ -216,7 +216,7 @@ def generate_latent_examples_tex(
         return f"{COLORS[type_name]}!{normalized * 100:.3f}"
 
     latex_output = [
-        "\\begin{subfigure}{\\linewidth}",
+        "\\begin{subfigure}{\\linewidth}" if subfigure else "\\begin{figure}",
         "\\centering",
         "\\begin{longtable}{lr}",
         "\\toprule",
@@ -270,7 +270,7 @@ def generate_latent_examples_tex(
             "\\bottomrule",
             "\\end{longtable}",
             f"\\caption{{{caption}}}",
-            "\\end{subfigure}",
+            "\\end{subfigure}" if subfigure else "\\end{figure}",
         ]
     )
 
@@ -476,9 +476,11 @@ def generate_combined(filename_stats: str, max_rows: int = 12) -> None:
         features_filename_out = features_filename.replace("#", f"out-{sae_index_out}")
 
         try:
-            tex_in = generate_latent_examples_tex(features_filename_in, True, max_rows)
+            tex_in = generate_latent_examples_tex(
+                features_filename_in, True, max_rows, subfigure=True
+            )
             tex_out = generate_latent_examples_tex(
-                features_filename_out, False, max_rows
+                features_filename_out, False, max_rows, subfigure=True
             )
         except FileNotFoundError:
             continue
@@ -527,6 +529,7 @@ def get_out_in_indices(
         sae_indices_out.append(int(sae_index_out))
 
     df_in = pd.read_csv(filename_in)
+    df_in = df_in.sort_values("mean", ascending=False)
     for sae_index_out in sae_indices_out:
         sae_indices_in = []
         for sae_index_in in df_in[df_in["j"] == sae_index_out].head(max_in)["i"].values:
@@ -536,15 +539,80 @@ def get_out_in_indices(
     return out_in_indices
 
 
-def generate_out_in():
-    pass
+def generate_out_in(
+    filename_out: str,
+    filename_in: str,
+    max_out: int = 128,
+    max_in: int = 16,
+    max_rows: int = 8,
+):
+    features_dir = filename_out.replace("stats0_", "features/")
+    features_dir = features_dir.replace(".csv", "")
+    features_filename = (
+        f"{features_dir}/examples-#_stas_c4-en-10k,train,batch_size=32,ctx_len=16.csv"
+    )
+
+    info = parse_filename_stats(filename_out)
+    assert info is not None
+
+    texes = []
+
+    for index, (sae_index_out, sae_indices_in) in enumerate(
+        get_out_in_indices(filename_out, filename_in, max_out, max_in)
+    ):
+        tex = []
+
+        features_filename_out = features_filename.replace("#", f"out-{sae_index_out}")
+        try:
+            tex_out = generate_latent_examples_tex(
+                features_filename_out, False, max_rows, subfigure=False
+            )
+            if tex_out is None:
+                continue
+            tex.append(tex_out)
+        except FileNotFoundError:
+            continue
+
+        for sae_index_in in sae_indices_in:
+            features_filename_in = features_filename.replace("#", f"in-{sae_index_in}")
+            try:
+                tex_in = generate_latent_examples_tex(
+                    features_filename_in, True, max_rows, subfigure=False
+                )
+                if tex_in is None:
+                    continue
+                tex.append(tex_in)
+            except FileNotFoundError:
+                continue
+
+        if len(tex) == 0:
+            continue
+        tex = "\n".join(tex)
+
+        sae_index_out_filename = f"out-{info.model_name.lower()}-layer-{info.layer}-mean-{index:02d}-out-{sae_index_out}.tex"
+        with open(f"out_tex/{sae_index_out_filename}", "w", encoding="utf-8") as f:
+            f.write(tex)
+
+        texes.append(tex + "\n\\clearpage\n")
+
+    all_filename = f"out_tex/combined-{info.model_name.lower()}-layer-{info.layer}.tex"
+    with open(all_filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(texes))
 
 
 if __name__ == "__main__":
-    generate_tables()
-    generate_main()
+    # generate_tables()
+    # generate_main()
 
     os.makedirs("combined_tex", exist_ok=True)
-    generate_combined("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv")
-    generate_combined("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
-    generate_combined("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+    # generate_combined("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv")
+    # generate_combined("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+    # generate_combined("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+
+    os.makedirs("out_tex", exist_ok=True)
+    generate_out_in(
+        "stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv",
+        "stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv",
+    )
+    # generate_combined("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+    # generate_combined("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")

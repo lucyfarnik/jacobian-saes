@@ -359,6 +359,7 @@ def get_out_in_examples(
             sae_indices_out.append(int(sae_index_out))
 
     df_in = pd.read_csv(filename_in)
+    df_in = df_in.sort_values("mean", ascending=False)
     sae_indices_in = []
     for sae_index_out in sae_indices_out:
         for sae_index_in in df_in[df_in["j"] == sae_index_out].head(max_in)["i"].values:
@@ -706,10 +707,9 @@ if __name__ == "__main__":
     for filename_stats in filenames_stats:
         save_pair_stats(filename_stats, args.rows)
 
-    # modes = ["pair", "latent", "out_in"]
-    modes = ["out_in"]
-    for checkpoint, filename_stat, filename_stats, mode in zip(
-        checkpoints, filenames_stat, filenames_stats, modes
+    mode = "out_in"
+    for checkpoint, filename_stat, filename_stats in zip(
+        checkpoints, filenames_stat, filenames_stats
     ):
         print(f"checkpoint:     {checkpoint}")
         print(f"filename_stat:  {filename_stat}")
