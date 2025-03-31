@@ -35,7 +35,7 @@ TOK_SPECIAL_CHARS = {
 
 TEX_SPECIAL_CHARS = {
     # "_": "\\_",
-    # "&": "\\&",
+    "&": "\\&",
     "%": "\\%",
     # "#": "\\#",
     # "{": "\\{",
@@ -79,7 +79,7 @@ def clean_token_for_latex(token: str) -> str:
 
 
 def generate_pair_examples_tex(
-    filepath: str, max_rows: int | None = None
+    filepath: str, max_rows: int | None = None, caption: str | None = None
 ) -> str | None:
     info = parse_filename_pair(prettify_filename_pair(filepath))
     if info is None:
@@ -87,7 +87,7 @@ def generate_pair_examples_tex(
             f"Failed to parse filename: {prettify_filename_pair(filepath)}"
         )
     else:
-        caption = (
+        caption = caption or (
             f"{info.model_name}, layer {info.layer}. "  #
             f"Input SAE latent index {info.sae_index_in}. "  #
             f"Output SAE latent index {info.sae_index_out}. "  #
@@ -130,9 +130,9 @@ def generate_pair_examples_tex(
     latex_output = [
         "\\begin{figure}",
         "\\centering",
-        "\\begin{longtable}{lrl}",
+        "\\begin{longtable}{llr}",
         "\\toprule",
-        "Category & Max. abs. value & Example tokens \\\\",
+        "Category & Example tokens  & Max. abs. value \\\\",
         "\\midrule",
     ]
 
@@ -164,7 +164,7 @@ def generate_pair_examples_tex(
             tokens_str = " ".join(colored_tokens)
 
             latex_output.append(
-                f"{CATEGORIES[value_col]} & \\num{{{max_value:.3e}}} & {tokens_str} \\\\"
+                f"{CATEGORIES[value_col]} & {tokens_str} & \\num{{{max_value:.3e}}} \\\\"
             )
 
             if value_col == "sae_acts_out":
@@ -184,7 +184,12 @@ def generate_pair_examples_tex(
 
 
 def generate_latent_examples_tex(
-    filepath: str, sae_in: bool, max_rows: int | None = None, subfigure: bool = True
+    filepath: str,
+    sae_in: bool,
+    max_rows: int | None = None,
+    subfigure: bool = True,
+    caption: str | None = None,
+    continued_float: bool = False,
 ) -> str | None:
     info = parse_filename_latent(prettify_filename_latent(filepath))
     if info is None:
@@ -192,7 +197,7 @@ def generate_latent_examples_tex(
             f"Failed to parse filename: {prettify_filename_latent(filepath)}"
         )
     else:
-        caption = (
+        caption = caption or (
             f"Layer {info.layer} of {info.model_name}. "  #
             f"{info.sae} SAE latent index {info.index}."  #
         )
@@ -215,14 +220,29 @@ def generate_latent_examples_tex(
         normalized = float(value) / max_val
         return f"{COLORS[type_name]}!{normalized * 100:.3f}"
 
-    latex_output = [
-        "\\begin{subfigure}{\\linewidth}" if subfigure else "\\begin{figure}",
-        "\\centering",
-        "\\begin{longtable}{lr}",
-        "\\toprule",
-        "Example tokens & Max. activation \\\\",
-        "\\midrule",
-    ]
+    if continued_float:
+        latex_output = [
+            "\\end{figure}%",
+            "\\begin{figure}[ht]\\ContinuedFloat",
+            "\\begin{subfigure}{\\linewidth}",
+        ]
+    elif subfigure:
+        latex_output = [
+            "\\begin{subfigure}{\\linewidth}",
+        ]
+    else:
+        latex_output = [
+            "\\begin{figure}",
+        ]
+    latex_output.extend(
+        [
+            "\\centering",
+            "\\begin{longtable}{lr}",
+            "\\toprule",
+            "Example tokens & Max. activation \\\\",
+            "\\midrule",
+        ]
+    )
 
     for _, row in df.iterrows():
         tokens = row["tokens"]
@@ -270,10 +290,15 @@ def generate_latent_examples_tex(
             "\\bottomrule",
             "\\end{longtable}",
             f"\\caption{{{caption}}}",
-            "\\end{subfigure}" if subfigure else "\\end{figure}",
         ]
     )
-
+    if continued_float:
+        latex_output.append("\\end{subfigure}")
+    elif subfigure:
+        latex_output.append("\\end{subfigure}")
+    else:
+        latex_output.append("\\end{figure}")
+    latex_output = [line for line in latex_output if line.strip()]
     return "\n".join(latex_output)
 
 
@@ -544,8 +569,10 @@ def generate_out_in(
     filename_in: str,
     max_out: int = 64,
     max_in: int = 16,
-    max_rows: int = 8,
+    max_rows: int = 12,
 ):
+    df_out = pd.read_csv(filename_out)
+
     feature_pairs_dir = filename_out.replace("stats0_", "feature_pairs/")
     feature_pairs_dir = feature_pairs_dir.replace(".csv", "")
     feature_pairs_filename = f"{feature_pairs_dir}/examples-#in-v-#out_stas_c4-en-10k,train,batch_size=32,ctx_len=16.tex"
@@ -560,16 +587,28 @@ def generate_out_in(
     assert info is not None
 
     texes = []
+    subfigure = True
 
-    for index, (sae_index_out, sae_indices_in) in tqdm(
+    for index_out, (sae_index_out, sae_indices_in) in tqdm(
         enumerate(get_out_in_indices(filename_out, filename_in, max_out, max_in))
     ):
         tex = []
+        if subfigure:
+            tex.append("\\begin{figure}")
+            tex.append("\\centering")
 
         features_filename_out = features_filename.replace("#", f"out-{sae_index_out}")
+        caption_out = f"""The top 12 examples that produce the maximum latent activations for the output SAE latent with index {sae_index_out}.
+The Jacobian SAE pair was trained on layer {info.layer} of {info.model_name} with an expansion factor of $R=64$ and sparsity $k=32$.
+The examples were collected over the first 10K records of the English subset of the C4 text dataset with a context length of 16 tokens."""
         try:
             tex_out = generate_latent_examples_tex(
-                features_filename_out, False, max_rows, subfigure=False
+                features_filename_out,
+                sae_in=False,
+                max_rows=max_rows,
+                subfigure=subfigure,
+                caption=caption_out,
+                continued_float=False,
             )
             if tex_out is None:
                 continue
@@ -577,39 +616,68 @@ def generate_out_in(
         except FileNotFoundError:
             continue
 
-        for sae_index_in in sae_indices_in:
-            feature_pairs_filename_ = feature_pairs_filename.replace(
-                "#out", str(sae_index_out)
-            )
-            feature_pairs_filename_ = feature_pairs_filename_.replace(
-                "#in", str(sae_index_in)
-            )
+        for index_in, sae_index_in in enumerate(sae_indices_in):
+            # feature_pairs_filename_ = feature_pairs_filename.replace(
+            #     "#out", str(sae_index_out)
+            # )
+            # feature_pairs_filename_ = feature_pairs_filename_.replace(
+            #     "#in", str(sae_index_in)
+            # )
 
-            try:
-                tex_pair = generate_pair_examples_tex(feature_pairs_filename_, max_rows)
-            except Exception as exception:  # noqa: E722
-                print(exception)
-                tex_pair = None
-            if tex_pair is not None:
-                tex.append(tex_pair)
+            # df = df_out[(df_out["i"] == sae_index_in) & (df_out["j"] == sae_index_out)]
+            # if len(df) == 0:
+            #     caption_pair = None
+            # else:
+            #     row = df.iloc[0]
+            #     sae_index_in = int(row["i"])
+            #     sae_index_out = int(row["j"])
+            #     count = int(row["count"])
+            #     mean = float(row["mean"])
+            #     std = float(row["std"])
+
+            #                 caption_pair = f"""The top 12 examples that produce the maximum mean values for the Jacobian element with input and output indices {sae_index_in} and {sae_index_out}, respectively.
+            # The Jacobian SAE pair was trained on layer {info.layer} of {info.model_name} with an expansion factor of $R=64$ and sparsity $k=32$.
+            # The examples were collected over the first 10K records of the English subset of the C4 text dataset with a context length of 16 tokens.
+            # The Jacobian element is non-zero for {count} tokens, and has a mean of \\num{{{mean:.3e}}} and a standard deviation of \\num{{{std:.3e}}} over its non-zero values."""
+            # try:
+            #     tex_pair = generate_pair_examples_tex(
+            #         feature_pairs_filename_,
+            #         max_rows=max_rows,
+            #         caption=caption_pair,
+            #     )
+            # except Exception as exception:  # noqa: E722
+            #     print(exception)
+            #     tex_pair = None
+            # if tex_pair is not None:
+            #     tex.append(tex_pair)
 
             features_filename_in = features_filename.replace("#", f"in-{sae_index_in}")
+            caption_in = f"""The top 12 examples that produce the maximum latent activations for the input SAE latent with index {sae_index_in}.
+The Jacobian SAE pair was trained on layer {info.layer} of {info.model_name} with an expansion factor of $R=64$ and sparsity $k=32$.
+The examples were collected over the first 10K records of the English subset of the C4 text dataset with a context length of 16 tokens."""
             try:
                 tex_in = generate_latent_examples_tex(
-                    features_filename_in, True, max_rows, subfigure=False
+                    features_filename_in,
+                    sae_in=True,
+                    max_rows=max_rows,
+                    subfigure=subfigure,
+                    caption=caption_in,
+                    continued_float=subfigure and (index_in % 2 == 1),
                 )
                 if tex_in is None:
                     continue
                 tex.append(tex_in)
             except FileNotFoundError:
                 continue
-            tex.append("\n\\clearpage\n")
+            # tex.append("\n\\clearpage\n")
 
         if len(tex) == 0:
             continue
+        if subfigure:
+            tex.append("\\end{figure}")
         tex = "\n".join(tex)
 
-        sae_index_out_filename = f"out-{info.model_name.lower()}-layer-{info.layer}-mean-{index:02d}-out-{sae_index_out}.tex"
+        sae_index_out_filename = f"out-{info.model_name.lower()}-layer-{info.layer}-mean-{index_out:02d}-out-{sae_index_out}.tex"
         with open(f"out_tex/{sae_index_out_filename}", "w", encoding="utf-8") as f:
             f.write(tex)
 
@@ -625,14 +693,20 @@ if __name__ == "__main__":
     # generate_main()
 
     os.makedirs("combined_tex", exist_ok=True)
-    # generate_combined("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv")
-    # generate_combined("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
-    # generate_combined("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+    generate_combined("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv")
+    generate_combined("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+    generate_combined("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
 
     os.makedirs("out_tex", exist_ok=True)
     generate_out_in(
         "stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv",
         "stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv",
     )
-    # generate_combined("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
-    # generate_combined("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+    generate_out_in(
+        "stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv",
+        "stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv",
+    )
+    generate_out_in(
+        "stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv",
+        "stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv",
+    )
