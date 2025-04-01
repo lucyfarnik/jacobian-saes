@@ -55,7 +55,7 @@ TEX_SPECIAL_CHARS = {
 
 
 def clean_token_for_latex(token: str) -> str:
-    token = token.replace("\\", "\\textbackslash{}")
+    # token = token.replace("\\", "\\textbackslash{}")
     for char, repl in TOK_SPECIAL_CHARS.items():
         token = token.replace(char, repl)
     for char, repl in TEX_SPECIAL_CHARS.items():
@@ -265,6 +265,8 @@ def generate_latent_examples_tex(
                 clean_token = re.sub(
                     r"( +)$", lambda m: "~" * len(m.group(1)), clean_token
                 )
+                if clean_token == "~)":
+                    clean_token = " )"
 
                 if "$" in clean_token:  # awful hacks
                     inline = clean_token.replace("$", "\\$")
@@ -273,7 +275,7 @@ def generate_latent_examples_tex(
                 elif clean_token.startswith("%"):
                     inline = "\\%" + f"\\lstinline{{{clean_token[1:]}}}"
                 elif len(clean_token.replace("~", "").replace(" ", "")) == 0:
-                    inline = "\\space"
+                    inline = "\\hspace{1pt}"
                 else:
                     inline = f"\\lstinline{{{clean_token}}}"
 
@@ -571,7 +573,8 @@ def generate_out_in(
     max_in: int = 16,
     max_rows: int = 12,
 ):
-    df_out = pd.read_csv(filename_out)
+    print(f"generate_out_in: {filename_out}")
+    df_in = pd.read_csv(filename_in)
 
     feature_pairs_dir = filename_out.replace("stats0_", "feature_pairs/")
     feature_pairs_dir = feature_pairs_dir.replace(".csv", "")
@@ -590,7 +593,7 @@ def generate_out_in(
     subfigure = True
 
     for index_out, (sae_index_out, sae_indices_in) in tqdm(
-        enumerate(get_out_in_indices(filename_out, filename_in, max_out, max_in))
+        enumerate(get_out_in_indices(filename_out, filename_in, max_out, max_in)),
     ):
         tex = []
         if subfigure:
@@ -598,9 +601,7 @@ def generate_out_in(
             tex.append("\\centering")
 
         features_filename_out = features_filename.replace("#", f"out-{sae_index_out}")
-        caption_out = f"""The top 12 examples that produce the maximum latent activations for the output SAE latent with index {sae_index_out}.
-The Jacobian SAE pair was trained on layer {info.layer} of {info.model_name} with an expansion factor of $R=64$ and sparsity $k=32$.
-The examples were collected over the first 10K records of the English subset of the C4 text dataset with a context length of 16 tokens."""
+        caption_out = f"""The top 12 examples that produce the maximum latent activations for the output SAE latent with index {sae_index_out}."""
         try:
             tex_out = generate_latent_examples_tex(
                 features_filename_out,
@@ -616,45 +617,55 @@ The examples were collected over the first 10K records of the English subset of 
         except FileNotFoundError:
             continue
 
-        for index_in, sae_index_in in enumerate(sae_indices_in):
-            # feature_pairs_filename_ = feature_pairs_filename.replace(
-            #     "#out", str(sae_index_out)
-            # )
-            # feature_pairs_filename_ = feature_pairs_filename_.replace(
-            #     "#in", str(sae_index_in)
-            # )
+        for index_in, sae_index_in in tqdm(enumerate(sae_indices_in)):
+            #             feature_pairs_filename_ = feature_pairs_filename.replace(
+            #                 "#out", str(sae_index_out)
+            #             )
+            #             feature_pairs_filename_ = feature_pairs_filename_.replace(
+            #                 "#in", str(sae_index_in)
+            #             )
 
-            # df = df_out[(df_out["i"] == sae_index_in) & (df_out["j"] == sae_index_out)]
-            # if len(df) == 0:
-            #     caption_pair = None
-            # else:
-            #     row = df.iloc[0]
-            #     sae_index_in = int(row["i"])
-            #     sae_index_out = int(row["j"])
-            #     count = int(row["count"])
-            #     mean = float(row["mean"])
-            #     std = float(row["std"])
+            #             df = df_in[(df_in["i"] == sae_index_in) & (df_in["j"] == sae_index_out)]
+            #             if len(df) == 0:
+            #                 caption_pair = None
+            #             else:
+            #                 row = df.iloc[0]
+            #                 sae_index_in = int(row["i"])
+            #                 sae_index_out = int(row["j"])
+            #                 count = int(row["count"])
+            #                 mean = float(row["mean"])
+            #                 std = float(row["std"])
 
             #                 caption_pair = f"""The top 12 examples that produce the maximum mean values for the Jacobian element with input and output indices {sae_index_in} and {sae_index_out}, respectively.
             # The Jacobian SAE pair was trained on layer {info.layer} of {info.model_name} with an expansion factor of $R=64$ and sparsity $k=32$.
             # The examples were collected over the first 10K records of the English subset of the C4 text dataset with a context length of 16 tokens.
             # The Jacobian element is non-zero for {count} tokens, and has a mean of \\num{{{mean:.3e}}} and a standard deviation of \\num{{{std:.3e}}} over its non-zero values."""
-            # try:
-            #     tex_pair = generate_pair_examples_tex(
-            #         feature_pairs_filename_,
-            #         max_rows=max_rows,
-            #         caption=caption_pair,
-            #     )
-            # except Exception as exception:  # noqa: E722
-            #     print(exception)
-            #     tex_pair = None
-            # if tex_pair is not None:
-            #     tex.append(tex_pair)
+            #             try:
+            #                 tex_pair = generate_pair_examples_tex(
+            #                     feature_pairs_filename_,
+            #                     max_rows=max_rows,
+            #                     caption=caption_pair,
+            #                 )
+            #             except Exception as exception:  # noqa: E722
+            #                 print(exception)
+            #                 tex_pair = None
+            #             if tex_pair is not None:
+            #                 # tex.append(tex_pair)
+            #                 pass
 
             features_filename_in = features_filename.replace("#", f"in-{sae_index_in}")
-            caption_in = f"""The top 12 examples that produce the maximum latent activations for the input SAE latent with index {sae_index_in}.
-The Jacobian SAE pair was trained on layer {info.layer} of {info.model_name} with an expansion factor of $R=64$ and sparsity $k=32$.
-The examples were collected over the first 10K records of the English subset of the C4 text dataset with a context length of 16 tokens."""
+            caption_in = f"""The top 12 examples that produce the maximum latent activations for the input SAE latent with index {sae_index_in}."""
+
+            df = df_in[(df_in["i"] == sae_index_in) & (df_in["j"] == sae_index_out)]
+            if len(df) > 0:
+                row = df.iloc[0]
+                sae_index_in = int(row["i"])
+                sae_index_out = int(row["j"])
+                count = int(row["count"])
+                mean = float(row["mean"])
+                std = float(row["std"])
+                caption_in += f"""
+Paired with the output SAE latent with index {sae_index_out}, the Jacobian element is non-zero for {count} tokens, and has a mean of \\num{{{mean:.3e}}} (rank {index_in} for the output SAE latent) and a standard deviation of \\num{{{std:.3e}}} over its non-zero values."""
             try:
                 tex_in = generate_latent_examples_tex(
                     features_filename_in,
@@ -674,6 +685,12 @@ The examples were collected over the first 10K records of the English subset of 
         if len(tex) == 0:
             continue
         if subfigure:
+            tex.append(f"\\label{{fig:out-{sae_index_out}}}")
+            caption = f"""The top 12 examples that produce the maximum latent activations for the output SAE latent with index {sae_index_out},
+and the input SAE latents with which the mean values of the corresponding Jacobian elements are greatest.
+The Jacobian SAE pair was trained on layer {info.layer} of {info.model_name} with an expansion factor of $R=64$ and sparsity $k=32$.
+The examples were collected over the first 10K records of the English subset of the C4 text dataset with a context length of 16 tokens."""
+            tex.append(f"\\caption{{{caption}}}")
             tex.append("\\end{figure}")
         tex = "\n".join(tex)
 
@@ -692,20 +709,20 @@ if __name__ == "__main__":
     # generate_tables()
     # generate_main()
 
-    os.makedirs("combined_tex", exist_ok=True)
-    generate_combined("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv")
-    generate_combined("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
-    generate_combined("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+    # os.makedirs("combined_tex", exist_ok=True)
+    # generate_combined("stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv")
+    # generate_combined("stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
+    # generate_combined("stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv")
 
     os.makedirs("out_tex", exist_ok=True)
-    generate_out_in(
-        "stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv",
-        "stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv",
-    )
-    generate_out_in(
-        "stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv",
-        "stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv",
-    )
+    # generate_out_in(
+    #     "stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08_mean.csv",
+    #     "stats0_Layer3-32768-J1-LR5.0e-04-k32-T3.0e+08.csv",
+    # )
+    # generate_out_in(
+    #     "stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08_mean.csv",
+    #     "stats0_Layer7-49152-J1-LR5.0e-04-Tokens3.0e+08.csv",
+    # )
     generate_out_in(
         "stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08_mean.csv",
         "stats0_Layer15-65536-J1-LR5.0e-04-Tokens3.0e+08.csv",
