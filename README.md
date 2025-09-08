@@ -1,5 +1,5 @@
 # Jacobian SAEs
-The is the codebase for the paper **Jacobian Sparse Autoencoders: Sparsify Computations, Not Just Activations**.
+The is the codebase for the paper **[Jacobian Sparse Autoencoders: Sparsify Computations, Not Just Activations](https://arxiv.org/pdf/2502.18147)**.
 The goal of this paper is to create something similar to SAEs but which optimizes for _sparsity of computation_ (i.e. minimizing the number of edges in the computational graph) rather than merely sparsity of internal representations.
 
 ## How to run it
