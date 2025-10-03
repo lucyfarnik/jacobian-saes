@@ -1,7 +1,0 @@
-transformer-lens==2.11.0
-nnsight==0.3.7
-orjson==3.10.13
-git+https://github.com/EleutherAI/sae
-git+https://github.com/lucyfarnik/sae-auto-interp
-transformers==4.46.1
-kaleido=0.2.1

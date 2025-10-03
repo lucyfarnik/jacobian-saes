@@ -28,7 +28,7 @@ parser.add_argument(
     type=str,
     default="70m",
     help="Pythia model size",
-    choices=["70m", "160m", "410m", "1b", "1.4b", "2.8b", "6.9b", "12b"],
+    choices=["14m", "31m", "70m", "160m", "410m", "1b", "1.4b", "2.8b", "6.9b", "12b"],
 )
 parser.add_argument("-p", "--precision", type=int, default=32, help="Floating point precision")
 parser.add_argument("--store-batch-size", type=int, default=16, help="Store batch size")
@@ -68,6 +68,8 @@ lr_warm_up_steps = total_training_steps // 100  # 1% of training
 lr_decay_steps = total_training_steps // 5  # 20% of training
 
 d_model_by_size = {
+    "14m": 128,
+    "31m": 256,
     "70m": 512,
     "160m": 768,
     "410m": 1024,
@@ -79,6 +81,8 @@ d_model_by_size = {
 }
 
 n_layers_by_size = {
+    "14m": 6,
+    "31m": 6,
     "70m": 6,
     "160m": 12,
     "410m": 24,

@@ -1,0 +1,14 @@
+[project]
+name = "jacobian-saes"
+version = "0.1.0"
+readme = "README.md"
+dependencies = [
+    "transformer-lens==2.11.0",
+    "nnsight==0.3.7",
+    "orjson==3.10.13",
+    "transformers==4.46.1",
+]
+requires-python = ">= 3.12"
+
+[tool.setuptools]
+package-dir = {"" = "jacobian_saes"}

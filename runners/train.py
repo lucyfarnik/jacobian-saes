@@ -12,6 +12,8 @@ from jacobian_saes import LanguageModelSAERunnerConfig, SAETrainingRunner
 from jacobian_saes.training.sparsity_metrics import sparsity_metrics
 
 d_model_by_size = {
+    "14m": 128,
+    "31m": 256,
     "70m": 512,
     "160m": 768,
     "gpt2-small": 768,
@@ -24,6 +26,8 @@ d_model_by_size = {
 }
 
 n_layers_by_size = {
+    "14m": 6,
+    "31m": 6,
     "70m": 6,
     "160m": 12,
     "gpt2-small": 12,
@@ -65,7 +69,7 @@ parser.add_argument(
     "--eval-n-batches", type=int, default=10, help="Number of eval batches"
 )
 parser.add_argument(
-    "--jacobian-coef", "-j", type=float, default=1, help="Jacobian coefficient"
+    "--jacobian-coef", "-j", type=float, default=None, help="Jacobian coefficient (default: 0.5*k^2/d_model)"
 )
 parser.add_argument("-k", type=int, default=32, help="TopK value")
 parser.add_argument("--layer", "-l", type=int, default=3, help="Layer to hook")
@@ -125,7 +129,17 @@ parser.add_argument(
     default="jacobian_saes_test",
     help="Wandb project name",
 )
+parser.add_argument(
+    "--model-deduped",
+    action=argparse.BooleanOptionalAction,
+    default=None,
+    help="Whether to use the deduped version of the model (default: True if a deduped version of this model is known to exist).",
+)
+
 args = parser.parse_args()
+
+if args.model_deduped is None:
+    args.model_deduped = args.model_size not in ["14m", "31m", "gpt2-small"]
 
 if torch.cuda.is_available():
     device = "cuda"
@@ -138,31 +152,23 @@ print("Using device:", device)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 if args.model_preset is not None:
+    args.model_size = args.model_preset
+
     if args.model_preset == "410m":
-        args.model_size = "410m"
         if args.expansion_factor == 32:
             args.expansion_factor = 64
-        if args.jacobian_coef == 1:
-            # jac coeff should imo be 0.5 k^2 / d_model
-            args.jacobian_coef = 0.5
         if args.eval_batch_size == 8:
             args.eval_batch_size = 4
         if args.eval_n_batches == 10:
             args.eval_n_batches = 20
 
     elif args.model_preset == "1b":
-        args.model_size = "1b"
-        if args.jacobian_coef == 1:
-            args.jacobian_coef = 0.25
         if args.eval_batch_size == 8:
             args.eval_batch_size = 2
         if args.eval_n_batches == 10:
             args.eval_n_batches = 40
 
     elif args.model_preset == "2.8b":
-        args.model_size = "2.8b"
-        if args.jacobian_coef == 1:
-            args.jacobian_coef = 0.2
         if args.eval_batch_size == 8:
             args.eval_batch_size = 2
         if args.eval_n_batches == 10:
@@ -173,9 +179,6 @@ if args.model_preset is not None:
             args.store_batch_size = 8
 
     elif args.model_preset == "6.9b":
-        args.model_size = "6.9b"
-        if args.jacobian_coef == 1:
-            args.jacobian_coef = 0.125
         if args.buffer_size == 32:
             args.buffer_size = 2
         if args.store_batch_size == 16:
@@ -194,10 +197,18 @@ if args.model_preset is not None:
     else:
         raise ValueError(f"Model preset not yet supported: {args.model_preset}")
 
+
+d_model = d_model_by_size[args.model_size]
+
+if args.jacobian_coef is None:
+    args.jacobian_coef = 0.5 * (args.k ** 2) / d_model
+    print(f"Automatic jacobian_coef: {args.jacobian_coef:.6f}")
+
+model_name_suffix = "-deduped" if args.model_deduped else ""
 model_name = (
     "gpt2-small"
     if args.model_size == "gpt2-small"
-    else f"pythia-{args.model_size}-deduped"
+    else f"pythia-{args.model_size}{model_name_suffix}"
 )
 
 dataset_path = "apollo-research/monology-pile-uncopyrighted-tokenizer-" + (
@@ -228,7 +239,7 @@ cfg = LanguageModelSAERunnerConfig(
     randomize_llm_weights=args.randomize_weights,
     hook_name=f"blocks.{args.layer}.ln2.hook_normalized",
     hook_layer=args.layer,
-    d_in=d_model_by_size[args.model_size],
+    d_in=d_model,
     activation_fn="topk",
     activation_fn_kwargs={"k": args.k},
     dataset_path=dataset_path,
